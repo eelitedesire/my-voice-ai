@@ -1,0 +1,18 @@
+# Core web  (fastapi 0.110.x keeps deps minimal: no orjson/ujson/jinja pulled in)
+fastapi==0.110.3
+uvicorn[standard]==0.30.1
+python-multipart==0.0.9
+websockets>=12.0
+
+# ML / audio  (Intel-mac CPU builds; torch capped at 2.2.2 for py3.11 x86_64)
+torch==2.2.2
+torchaudio==2.2.2
+speechbrain==1.0.3
+# speechbrain 1.0.3 still passes use_auth_token=, removed in huggingface_hub>=0.24
+huggingface_hub==0.23.5
+faster-whisper==1.0.3
+silero-vad==5.1
+numpy<2.0
+soundfile==0.12.1
+scipy>=1.11,<1.14
+requests>=2.31       # required by speechbrain but not declared by it

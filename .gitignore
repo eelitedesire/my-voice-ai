@@ -1,0 +1,26 @@
+# Virtual environment
+.venv/
+venv/
+
+# Downloaded models (large binary files)
+models/
+
+# Speaker enrollment data (user-specific)
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# macOS
+.DS_Store
+
+# Env / secrets
+.env
+*.env
+
+# IDE
+.vscode/
+.idea/

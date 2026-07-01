@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Live transcription — VoiceID</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <span class="brand">🎙️ VoiceID</span>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/enroll.html">Enroll speakers</a>
+      <a href="/live.html" class="active">Live transcription</a>
+    </nav>
+  </header>
+  <div class="container">
+    <div class="card">
+      <div class="statusbar">
+        <span class="dot" id="connDot"></span><span id="connText">disconnected</span>
+        <span class="dot" id="speechDot"></span><span id="speechText">silence</span>
+        <span class="badge" id="spkCount">0 enrolled</span>
+        <span style="flex:1"></span>
+        <button id="startBtn" class="success">▶ Start</button>
+        <button id="stopBtn" class="danger" disabled>■ Stop</button>
+      </div>
+
+      <div class="now-speaking">
+        <span class="swatch" id="nowSwatch" style="background:#64748b"></span>
+        <span class="name unknown" id="nowName">—</span>
+        <div class="meter"><span id="nowMeter"></span></div>
+        <span class="badge" id="nowConf">0.00</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Transcript</h2>
+      <div class="transcript" id="transcript">
+        <p class="hint">Press Start and begin speaking. Enrolled speakers are named; others are labeled “Unknown Speaker”.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <details class="config">
+        <summary>⚙️ Tuning (applies live)</summary>
+        <div class="config-grid" id="configGrid"></div>
+        <div class="row" style="margin-top:12px">
+          <button id="applyCfg" class="secondary">Apply</button>
+          <small>Higher threshold = stricter (more “Unknown”). Higher switch margin/windows = fewer identity flips.</small>
+        </div>
+      </details>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script type="module" src="/js/live.js"></script>
+</body>
+</html>

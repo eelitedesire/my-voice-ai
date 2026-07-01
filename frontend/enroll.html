@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Enroll speakers — VoiceID</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <span class="brand">🎙️ VoiceID</span>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/enroll.html" class="active">Enroll speakers</a>
+      <a href="/live.html">Live transcription</a>
+    </nav>
+  </header>
+  <div class="container">
+    <div class="grid">
+      <div class="card">
+        <h2>Enroll a speaker</h2>
+        <p class="hint">Record several short samples (or upload audio files). More varied samples → more robust recognition.</p>
+        <label>Speaker name</label>
+        <input type="text" id="name" placeholder="e.g. Alice" />
+
+        <label>Record samples</label>
+        <div class="row">
+          <button id="recBtn" class="rec">● Record sample</button>
+          <span class="badge" id="recStatus">idle</span>
+        </div>
+
+        <label>…or upload audio files (wav/flac/ogg/mp3/m4a)</label>
+        <input type="file" id="fileInput" accept="audio/*" multiple />
+
+        <div class="sample-chips" id="chips"></div>
+
+        <div class="row" style="margin-top:16px">
+          <button id="enrollBtn" class="success" disabled>Enroll speaker</button>
+          <button id="clearBtn" class="secondary">Clear samples</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Enrolled speakers</h2>
+        <p class="hint">Enroll at least two people for meaningful diarization.</p>
+        <ul class="speaker-list" id="speakers"></ul>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script type="module" src="/js/enroll.js"></script>
+</body>
+</html>

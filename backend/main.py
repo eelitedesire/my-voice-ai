@@ -3,17 +3,19 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi.responses import StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from .config import settings, TUNABLE_FIELDS, BASE_DIR
 from . import audio as audio_utils
-from . import embeddings, vad, transcription
+from . import embeddings, vad, transcription, exporters
 from .enrollment import store
-from .diarization import StreamingDiarizer
+from .session import LiveSession
+from .batch import iter_process_file
 from .schemas import (
     SpeakerListResponse, SpeakerSummary, EnrollResponse, ConfigUpdate,
 )
@@ -109,50 +111,114 @@ async def update_config(update: ConfigUpdate):
     return {"updated": changed, "config": settings.public()}
 
 
+# ---------------------------------------------------------------- REST: file upload
+
+@app.post("/api/transcribe-file")
+async def transcribe_file(file: UploadFile = File(...)):
+    """Diarize + transcribe an uploaded recording, streaming NDJSON progress.
+
+    Each line is one JSON object: progress updates ({stage,pct,...}) and finally
+    {stage:"done", segments:[...]}. The client reads the stream incrementally.
+    """
+    raw = await file.read()
+    filename = file.filename or "upload"
+
+    def gen():
+        try:
+            for msg in iter_process_file(raw, filename):
+                yield json.dumps(msg) + "\n"
+        except Exception as e:  # pragma: no cover
+            yield json.dumps({"stage": "error", "message": str(e)}) + "\n"
+
+    return StreamingResponse(gen(), media_type="application/x-ndjson")
+
+
+# ---------------------------------------------------------------- REST: export
+
+class ExportRequest(BaseModel):
+    format: str
+    segments: list[dict[str, Any]]
+    filename: str | None = None
+
+
+@app.post("/api/export")
+async def export_transcript(req: ExportRequest):
+    try:
+        content, media = exporters.export(req.segments, req.format)
+    except KeyError:
+        raise HTTPException(400, f"Unknown export format '{req.format}'")
+    base = (req.filename or "transcript").rsplit(".", 1)[0]
+    name = f"{base}.{req.format.lower()}"
+    return Response(
+        content=content, media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
 # ---------------------------------------------------------------- WebSocket: live
 
 @app.websocket("/ws/stream")
 async def ws_stream(ws: WebSocket):
+    """Real-time streaming diarization + transcription.
+
+    Two cooperating executor tasks: the receive loop runs the diarizer (fast) and
+    the ASR worker runs Whisper on the open speaker block (heavy). Outbound sends
+    are serialized. See backend/session.py for the block model.
+    """
     await ws.accept()
     loop = asyncio.get_event_loop()
     client_sr = settings.sample_rate
-    diarizer = StreamingDiarizer(store.snapshot())
-    await ws.send_json({"type": "ready", "speakers": len(store.snapshot())})
+    session: LiveSession | None = None
+    stop_flag = asyncio.Event()
+    send_lock = asyncio.Lock()
+    asr_task: asyncio.Task | None = None
 
-    async def emit(events: list[dict]) -> None:
-        for ev in events:
-            if ev["type"] == "segment":
-                seg_audio = ev.pop("_audio", None)
-                text = ""
-                if seg_audio is not None and settings.enable_transcription:
-                    text = await loop.run_in_executor(
-                        None, transcription.transcribe, seg_audio
-                    )
-                ev["text"] = text
-                if not text and settings.enable_transcription:
-                    # nothing intelligible; skip empty finalized turn
+    async def send(events: list[dict]) -> None:
+        if not events:
+            return
+        async with send_lock:
+            for ev in events:
+                await ws.send_json(ev)
+
+    async def asr_worker() -> None:
+        try:
+            while not stop_flag.is_set():
+                await asyncio.sleep(settings.asr_tick_sec)
+                if session is None:
                     continue
-            await ws.send_json(ev)
+                evs = await loop.run_in_executor(None, session.asr_tick)
+                await send(evs)
+        except Exception:  # pragma: no cover
+            pass
 
+    await ws.send_json({"type": "ready", "speakers": len(store.snapshot())})
     try:
         while True:
             msg = await ws.receive()
             if msg.get("type") == "websocket.disconnect":
                 break
-            if "text" in msg and msg["text"] is not None:
+            if msg.get("text") is not None:
                 data = json.loads(msg["text"])
                 if data.get("type") == "start":
                     client_sr = int(data.get("sample_rate", settings.sample_rate))
-                    diarizer = StreamingDiarizer(store.snapshot())
-                elif data.get("type") == "stop":
-                    await emit(await loop.run_in_executor(None, diarizer.flush))
+                    session = LiveSession(store.snapshot())
+                    stop_flag.clear()
+                    if asr_task is None or asr_task.done():
+                        asr_task = asyncio.create_task(asr_worker())
+                elif data.get("type") == "stop" and session is not None:
+                    await send(await loop.run_in_executor(None, session.flush))
+                    for _ in range(200):  # drain finalize queue
+                        evs = await loop.run_in_executor(None, session.asr_tick)
+                        if not evs:
+                            break
+                        await send(evs)
+                    await ws.send_json({"type": "stopped"})
                 continue
-            if "bytes" in msg and msg["bytes"] is not None:
+            if msg.get("bytes") is not None and session is not None:
                 wav = audio_utils.pcm16_to_float32(msg["bytes"])
                 if client_sr != settings.sample_rate:
                     wav = audio_utils.resample(wav, client_sr, settings.sample_rate)
-                events = await loop.run_in_executor(None, diarizer.process, wav)
-                await emit(events)
+                await send(await loop.run_in_executor(None, session.feed, wav))
     except WebSocketDisconnect:
         pass
     except Exception as e:  # pragma: no cover
@@ -160,6 +226,13 @@ async def ws_stream(ws: WebSocket):
             await ws.send_json({"type": "error", "message": str(e)})
         except Exception:
             pass
+    finally:
+        stop_flag.set()
+        if asr_task is not None:
+            try:
+                await asr_task
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------- static frontend

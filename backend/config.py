@@ -82,6 +82,16 @@ class Settings:
     # Finalize (and transcribe) a turn after this much trailing silence.
     finalize_silence_ms: int = _env_int("FINALIZE_SILENCE_MS", 700)
 
+    # ---- Streaming ASR (live partial transcription) ----
+    # How often the ASR worker attempts an incremental decode pass.
+    asr_tick_sec: float = _env_float("ASR_TICK_SEC", 0.45)
+    # Minimum unconfirmed audio before a decode pass is worthwhile.
+    asr_min_chunk_sec: float = _env_float("ASR_MIN_CHUNK_SEC", 0.6)
+    # Beam size for streaming passes (1 = greedy = fastest/lowest latency).
+    asr_beam_size: int = _env_int("ASR_BEAM_SIZE", 1)
+    # Beam size for offline file transcription (quality over latency).
+    asr_beam_size_batch: int = _env_int("ASR_BEAM_SIZE_BATCH", 5)
+
     def public(self) -> dict:
         """Config safe to expose to the UI / tuning endpoint."""
         d = asdict(self)
@@ -95,4 +105,5 @@ TUNABLE_FIELDS = {
     "vad_threshold", "id_threshold", "scoring", "ema_alpha", "switch_margin",
     "min_switch_windows", "min_segment_sec", "window_sec", "hop_sec",
     "min_embed_sec", "finalize_silence_ms", "enable_transcription",
+    "asr_tick_sec", "asr_min_chunk_sec", "asr_beam_size", "asr_beam_size_batch",
 }

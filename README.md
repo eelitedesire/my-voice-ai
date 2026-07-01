@@ -20,8 +20,19 @@ labeled **“Unknown Speaker.”**
   speech as *Unknown Speaker* instead of forcing a wrong match.
 - **Stability / anti-flicker** — EMA score smoothing + hysteresis (switch margin
   and consecutive-window requirement) prevent identity switching mid-conversation.
-- **Live transcription** — each finalized speaker turn is transcribed and shown
-  with the speaker’s name.
+- **True live streaming transcription** — words appear and refine progressively
+  while you speak (LocalAgreement-2 incremental decoding), then finalize and stop
+  changing — like ChatGPT Voice / Azure Live Transcription.
+- **Streaming stays synced to diarization** — each speaker turn is its own
+  transcript block; text never mixes two speakers, and the name persists while
+  text is still updating.
+- **File upload** — drop a WAV/MP3/M4A/FLAC/OGG recording; it is diarized,
+  identified, and returned as a timestamped, punctuated transcript with a live
+  progress bar.
+- **Export** — download any transcript as TXT, JSON, SRT, or VTT (timestamps,
+  speaker names, text, confidence).
+- **Modern UI** — live waveform, recording timer/indicator, colored speaker
+  badges, auto-scroll, transcript search, copy, and download.
 - **N speakers, no rearchitecting** — enroll 2, 5, 50; the identifier just scores
   against however many profiles exist.
 - **Fully tunable at runtime** — every threshold is editable from the UI / API.
@@ -74,20 +85,39 @@ ID_THRESHOLD=0.45 WHISPER_MODEL=tiny.en ./run.sh
 ## Architecture
 
 ```
-Browser (AudioWorklet, 16 kHz PCM) ──WS──► FastAPI
-  enroll.html / live.html                    │
-                                             ├─ Silero VAD  (speech/turn detection)
+Browser (AudioWorklet, 16 kHz PCM) ──WS──► FastAPI (session.py)
+  live.html / upload.html                    │
+                                 fast path ──┤─ Silero VAD  (speech/turn detection)
                                              ├─ ECAPA-TDNN  (speaker embeddings)
                                              ├─ Diarizer    (windows + hysteresis ID)
-                                             └─ faster-whisper (per-turn ASR)
+                                heavy path ──┴─ Streaming ASR (LocalAgreement) ─► faster-whisper
 ```
+
+The WebSocket runs two cooperating tasks: a **fast path** (diarizer + audio
+buffering, always real-time) and a **heavy path** (an ASR worker that decodes the
+open speaker block and finalizes closed ones). Only the ASR worker touches Whisper,
+so speaker events stay instant while transcription streams as fast as CPU allows.
 
 - [`backend/embeddings.py`](backend/embeddings.py) — ECAPA singleton, cosine utils.
 - [`backend/vad.py`](backend/vad.py) — Silero VAD (offline + streaming).
 - [`backend/enrollment.py`](backend/enrollment.py) — profile store, centroids, persistence.
 - [`backend/diarization.py`](backend/diarization.py) — streaming turn detection, ID, stability.
-- [`backend/transcription.py`](backend/transcription.py) — faster-whisper wrapper.
-- [`backend/main.py`](backend/main.py) — REST + WebSocket + static frontend.
+- [`backend/streaming_asr.py`](backend/streaming_asr.py) — LocalAgreement-2 incremental decoder.
+- [`backend/session.py`](backend/session.py) — binds diarization to per-speaker streaming ASR blocks.
+- [`backend/batch.py`](backend/batch.py) — uploaded-file diarization + transcription (progress stream).
+- [`backend/exporters.py`](backend/exporters.py) — TXT / JSON / SRT / VTT.
+- [`backend/transcription.py`](backend/transcription.py) — faster-whisper wrapper (segment + word-level).
+- [`backend/main.py`](backend/main.py) — REST + WebSocket + file upload + export + static frontend.
+
+## API endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| `WS` | `/ws/stream` | Live streaming diarization + transcription. |
+| `POST` | `/api/transcribe-file` | Upload a recording; streams NDJSON progress then segments. |
+| `POST` | `/api/export` | `{format, segments}` → downloadable TXT/JSON/SRT/VTT. |
+| `GET/POST` | `/api/speakers`, `/api/speakers/enroll`, … | Enrollment CRUD. |
+| `GET/POST` | `/api/config` | Read / live-tune thresholds. |
 
 ## Tips for best accuracy
 

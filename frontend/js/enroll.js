@@ -1,8 +1,10 @@
 import { MicRecorder } from '/js/recorder.js';
 
 const $ = (id) => document.getElementById(id);
-const samples = []; // { name, blob }
+const samples = []; // { name, blob, dur }
 let rec = null, recording = false;
+let recTimer = null, recStart = 0;
+const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 function toast(msg, kind = '') {
   const t = $('toast');
@@ -17,7 +19,8 @@ function renderChips() {
   samples.forEach((s, i) => {
     const c = document.createElement('span');
     c.className = 'chip';
-    c.innerHTML = `${s.name} <span class="x" data-i="${i}">✕</span>`;
+    const dur = s.dur ? ` · ${fmtDur(s.dur)}` : '';
+    c.innerHTML = `${s.name}${dur} <span class="x" data-i="${i}">✕</span>`;
     box.appendChild(c);
   });
   $('enrollBtn').disabled = samples.length === 0;
@@ -25,15 +28,33 @@ function renderChips() {
     x.addEventListener('click', () => { samples.splice(+x.dataset.i, 1); renderChips(); }));
 }
 
+const COLORS = ['#059669','#d97706','#e11d48','#0d9488','#db2777','#ca8a04','#be185d','#15803d'];
+
 async function loadSpeakers() {
   const { speakers } = await (await fetch('/api/speakers')).json();
   const ul = $('speakers');
-  ul.innerHTML = speakers.length ? '' : '<li class="meta">None yet.</li>';
-  for (const s of speakers) {
+  const badge = $('spkCountBadge');
+  if (badge) badge.textContent = `${speakers.length} speaker${speakers.length !== 1 ? 's' : ''}`;
+  if (!speakers.length) {
+    ul.innerHTML = '<div class="empty-state"><div class="e-icon">👤</div><p>No speakers enrolled yet.</p></div>';
+    return;
+  }
+  ul.innerHTML = '';
+  for (const [i, s] of speakers.entries()) {
+    const col = COLORS[i % COLORS.length];
+    const initials = s.name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
     const li = document.createElement('li');
-    li.innerHTML = `<span><strong>${s.name}</strong> <span class="meta">· ${s.num_samples} sample(s)</span></span>`;
+    li.innerHTML = `
+      <div class="spk-info">
+        <div class="spk-avatar" style="background:${col}">${initials}</div>
+        <div>
+          <div class="spk-name">${s.name}</div>
+          <div class="spk-meta">${s.num_samples} sample${s.num_samples !== 1 ? 's' : ''}</div>
+        </div>
+      </div>`;
     const del = document.createElement('button');
     del.className = 'danger'; del.textContent = 'Delete';
+    del.style.cssText = 'padding:6px 12px;font-size:12.5px;';
     del.onclick = async () => {
       await fetch(`/api/speakers/${s.id}`, { method: 'DELETE' });
       toast(`Deleted ${s.name}`); loadSpeakers();
@@ -42,21 +63,40 @@ async function loadSpeakers() {
   }
 }
 
+function startRecUI() {
+  recStart = Date.now();
+  $('recBtn').textContent = '■ Stop';
+  $('micViz').classList.add('active');
+  const status = $('recStatus');
+  status.style.color = 'var(--danger)';
+  status.style.fontWeight = '600';
+  const tick = () => { status.textContent = `● ${fmtDur((Date.now() - recStart) / 1000)}`; };
+  tick();
+  recTimer = setInterval(tick, 200);
+}
+function stopRecUI() {
+  clearInterval(recTimer); recTimer = null;
+  $('recBtn').textContent = '● Record sample';
+  $('micViz').classList.remove('active');
+  const status = $('recStatus');
+  status.textContent = 'idle'; status.style.color = ''; status.style.fontWeight = '';
+}
+
 $('recBtn').addEventListener('click', async () => {
   if (!recording) {
     try {
       rec = new MicRecorder({}); // capture mode (no onChunk)
       await rec.start();
       recording = true;
-      $('recBtn').textContent = '■ Stop';
-      $('recStatus').textContent = 'recording…';
+      startRecUI();
     } catch (e) { toast('Mic error: ' + e.message, 'err'); }
   } else {
+    const dur = (Date.now() - recStart) / 1000;
     const blob = rec.takeWavBlob();
     rec.stop(); recording = false;
-    $('recBtn').textContent = '● Record sample';
-    $('recStatus').textContent = 'idle';
-    samples.push({ name: `recording-${samples.length + 1}.wav`, blob });
+    stopRecUI();
+    if (dur < 0.8) { toast('That clip was too short — hold for a few seconds', 'err'); return; }
+    samples.push({ name: `recording-${samples.length + 1}.wav`, blob, dur });
     renderChips();
   }
 });

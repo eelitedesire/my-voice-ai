@@ -3,45 +3,63 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Enroll speakers — VoiceID</title>
+  <title>Enroll speakers — Sanuvia AI</title>
+  <link rel="icon" type="image/png" href="/images/favicon.png" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
-  <header class="topbar">
-    <span class="brand">🎙️ VoiceID</span>
-    <nav>
+  <header class="nav">
+    <a class="brand" href="/"><img src="/images/logo.png" alt="Sanuvia AI" class="brand-logo" /></a>
+    <nav class="nav-links">
       <a href="/">Home</a>
-      <a href="/enroll.html" class="active">Enroll speakers</a>
-      <a href="/live.html">Live transcription</a>
+      <a href="/enroll.html" class="active">Enroll</a>
+      <a href="/live.html">Live &amp; Upload</a>
     </nav>
+    <span class="nav-spacer"></span>
+    <span class="nav-status"><span class="pulse"></span> System online</span>
   </header>
-  <div class="container">
-    <div class="grid">
-      <div class="card">
-        <h2>Enroll a speaker</h2>
-        <p class="hint">Record several short samples (or upload audio files). More varied samples → more robust recognition.</p>
-        <label>Speaker name</label>
-        <input type="text" id="name" placeholder="e.g. Alice" />
 
-        <label>Record samples</label>
+  <div class="container">
+    <div style="margin-bottom:22px">
+      <div class="eyebrow">Voice enrollment</div>
+      <h1 style="font-size:30px; margin:0 0 6px">Build a voiceprint for each speaker</h1>
+      <p style="color:var(--muted); margin:0; max-width:640px">Record or upload a few short samples per person. More varied samples across mics and speaking styles make recognition far more robust.</p>
+    </div>
+
+    <div class="grid enroll">
+      <div class="card glow">
+        <h2>Enroll a speaker</h2>
+        <p class="hint">Aim for 3–5 samples, ~10–30s total.</p>
+
+        <label>Speaker name</label>
+        <input type="text" id="name" placeholder="e.g. Alice Johnson" />
+
+        <label>Record a sample</label>
+        <div class="mic-visual" id="micViz"><span></span><span></span><span></span><span></span><span></span><span></span></div>
         <div class="row">
           <button id="recBtn" class="rec">● Record sample</button>
           <span class="badge" id="recStatus">idle</span>
         </div>
 
-        <label>…or upload audio files (wav/flac/ogg/mp3/m4a)</label>
-        <input type="file" id="fileInput" accept="audio/*" multiple />
+        <label>…or upload audio files</label>
+        <label for="fileInput" class="file-btn"><span class="ic">📁</span> Choose audio files</label>
+        <input type="file" id="fileInput" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg" multiple hidden />
+        <div class="hint" style="margin-top:8px; text-align:center">WAV · MP3 · M4A · FLAC · OGG</div>
 
         <div class="sample-chips" id="chips"></div>
 
-        <div class="row" style="margin-top:16px">
-          <button id="enrollBtn" class="success" disabled>Enroll speaker</button>
+        <div class="row" style="margin-top:18px">
+          <button id="enrollBtn" class="success" disabled>✓ Enroll speaker</button>
           <button id="clearBtn" class="secondary">Clear samples</button>
         </div>
       </div>
 
       <div class="card">
-        <h2>Enrolled speakers</h2>
+        <div class="toolbar">
+          <h2>Enrolled speakers</h2>
+          <span class="grow"></span>
+          <span class="badge" id="spkCountBadge">0 speakers</span>
+        </div>
         <p class="hint">Enroll at least two people for meaningful diarization.</p>
         <ul class="speaker-list" id="speakers"></ul>
       </div>

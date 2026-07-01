@@ -3,46 +3,67 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>VoiceID — Speaker Recognition</title>
+  <title>Sanuvia AI — Speaker Intelligence</title>
+  <link rel="icon" type="image/png" href="/images/favicon.png" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
-  <header class="topbar">
-    <span class="brand">🎙️ VoiceID</span>
-    <nav>
+  <header class="nav">
+    <a class="brand" href="/"><img src="/images/logo.png" alt="Sanuvia AI" class="brand-logo" /></a>
+    <nav class="nav-links">
       <a href="/" class="active">Home</a>
-      <a href="/enroll.html">Enroll speakers</a>
-      <a href="/live.html">Live transcription</a>
+      <a href="/enroll.html">Enroll</a>
+      <a href="/live.html">Live &amp; Upload</a>
     </nav>
+    <span class="nav-spacer"></span>
+    <span class="nav-status"><span class="pulse"></span> System online</span>
   </header>
+
   <div class="container">
-    <div class="card">
-      <h2>Real-time speaker diarization &amp; recognition</h2>
-      <p class="hint">Powered by SpeechBrain ECAPA-TDNN embeddings, Silero VAD, and faster-whisper.</p>
-      <p>Workflow:</p>
-      <ol>
-        <li><a href="/enroll.html">Enroll two or more speakers</a> — record or upload a few voice samples each (10–30s total per person works best).</li>
-        <li><a href="/live.html">Open live transcription</a> — the system streams your mic, detects speaker turns, identifies who is speaking, and labels anyone unenrolled as <strong>Unknown Speaker</strong>.</li>
-      </ol>
-      <div class="row" style="margin-top:16px">
-        <a href="/enroll.html"><button>Enroll speakers →</button></a>
-        <a href="/live.html"><button class="secondary">Go live →</button></a>
+    <section class="hero">
+      <h1>Welcome to <span class="gradient-text">Sanuvia AI</span></h1>
+      <p class="lead">Enroll speakers, then transcribe live or from a file — every turn attributed to the right person.</p>
+      <div class="cta">
+        <a href="/live.html"><button>▶ Start live session</button></a>
+        <a href="/enroll.html"><button class="secondary">Enroll a speaker</button></a>
       </div>
-    </div>
+      <div class="stats">
+        <div class="stat"><div class="n" id="statSpeakers">—</div><div class="l">Enrolled speakers</div></div>
+        <div class="stat"><div class="n">Live</div><div class="l">Streaming transcription</div></div>
+        <div class="stat"><div class="n">4</div><div class="l">Export formats</div></div>
+      </div>
+    </section>
+
     <div class="card">
-      <h2>Enrolled speakers</h2>
+      <div class="toolbar">
+        <h2>Enrolled speakers</h2>
+        <span class="grow"></span>
+        <a href="/enroll.html"><button class="secondary sm">Manage</button></a>
+      </div>
       <ul class="speaker-list" id="speakers"></ul>
     </div>
   </div>
+
   <script type="module">
-    const ul = document.getElementById('speakers');
-    const r = await fetch('/api/speakers'); const { speakers } = await r.json();
-    ul.innerHTML = speakers.length ? '' : '<li class="meta">No speakers enrolled yet.</li>';
-    for (const s of speakers) {
-      const li = document.createElement('li');
-      li.innerHTML = `<span><strong>${s.name}</strong> <span class="meta">· ${s.num_samples} sample(s)</span></span>`;
-      ul.appendChild(li);
-    }
+    const $ = (id) => document.getElementById(id);
+    const COLORS = ['#059669','#d97706','#e11d48','#0d9488','#db2777','#ca8a04','#be185d','#15803d'];
+    try {
+      const { speakers } = await (await fetch('/api/speakers')).json();
+      $('statSpeakers').textContent = speakers.length;
+      const ul = $('speakers');
+      if (!speakers.length) { ul.innerHTML = '<div class="empty-state"><div class="e-icon">👤</div><p>No speakers enrolled yet.</p></div>'; }
+      else {
+        ul.innerHTML = '';
+        speakers.forEach((s, i) => {
+          const col = COLORS[i % COLORS.length];
+          const initials = s.name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+          const li = document.createElement('li');
+          li.innerHTML = `<div class="spk-info"><div class="spk-avatar" style="background:${col}">${initials}</div>
+            <div><div class="spk-name">${s.name}</div><div class="spk-meta">${s.num_samples} sample${s.num_samples!==1?'s':''}</div></div></div>`;
+          ul.appendChild(li);
+        });
+      }
+    } catch { $('statSpeakers').textContent = '0'; }
   </script>
 </body>
 </html>

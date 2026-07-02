@@ -44,7 +44,8 @@ with `df -h` before installing.
 
 ```bash
 sudo apt update
-sudo apt install -y python3.11 python3.11-venv python3.11-dev \
+# Ubuntu's system Python (3.10) is fine — all deps have 3.10 Linux wheels.
+sudo apt install -y python3 python3-venv python3-dev \
     build-essential git ffmpeg nginx certbot python3-certbot-nginx
 ```
 
@@ -66,7 +67,7 @@ git clone https://github.com/eelitedesire/my-voice-ai.git
 cd my-voice-ai
 
 # create venv + install deps (downloads torch etc. — takes a while)
-PYTHON=python3.11 ./setup.sh
+PYTHON=python3 ./setup.sh
 
 # fetch the Sherpa streaming Zipformer model
 ./scripts/download_sherpa.sh

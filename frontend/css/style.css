@@ -387,16 +387,26 @@ button.sm { padding: 7px 14px; font-size: 13px; border-radius: 7px; }
 .divider-v { width: 1px; height: 26px; background: var(--border); margin: 0 4px; }
 
 /* ── Recording chrome ── */
-.rec-chrome { display: flex; align-items: center; gap: 14px; margin: 14px 0; }
+.rec-chrome { display: flex; align-items: center; gap: 14px; margin: 14px 0; flex-wrap: wrap; }
 canvas.waveform {
-  flex: 1; height: 58px; width: 100%;
+  flex: 1; height: 58px; min-width: 0;
   background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
 }
 .timer {
   font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 700;
   min-width: 88px; text-align: center; color: var(--text); letter-spacing: .02em;
 }
-.rec-badge { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--muted); font-size: 13px; }
+.rec-badge { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--muted); font-size: 13px; flex-shrink: 0; }
+
+@media (max-width: 480px) {
+  .rec-chrome { gap: 10px; }
+  .rec-badge { width: 100%; }
+  canvas.waveform { width: 100%; }
+  .timer { min-width: 72px; font-size: 18px; }
+  .source-controls { width: 100%; }
+  .divider-v { display: none; }
+  .statusbar { gap: 8px; }
+}
 
 /* ── Now speaking ── */
 .now-speaking {

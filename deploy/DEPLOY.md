@@ -17,8 +17,11 @@ Facts for this deployment:
 | App upstream | `127.0.0.1:8000` (uvicorn) |
 | Repo | `github.com/eelitedesire/my-voice-ai` |
 
-Recommended server: **Ubuntu 22.04+**, **4 GB RAM** (torch + models), 2+ vCPU,
-~5 GB disk.
+Server sizing: **Ubuntu 22.04+**, 1–2 vCPU. The service uses **~0.6 GB RAM
+resident** (measured, torch + Sherpa loaded), so **2 GB RAM is comfortable** and
+even ~1.9 GB works with a little swap. The tighter constraint is **disk**: the
+venv (~1.5 GB) + models (~0.4 GB) + pip cache need roughly **4 GB free** — check
+with `df -h` before installing.
 
 ---
 
@@ -159,4 +162,8 @@ Sherpa model, and `systemctl restart sanuvia`.)
   faster but needs CUDA torch/onnxruntime builds.
 - **First request is slow** while models load; systemd `TimeoutStartSec=600`
   allows for that.
+- **Low-RAM host (~2 GB):** it fits (~0.6 GB resident). Keep 1–2 GB swap as a
+  cushion and `MALLOC_ARENA_MAX=2` (set in the service). Watch the first boot with
+  `free -h` and `journalctl -u sanuvia -f`. Concurrency adds a little per live
+  session, so a ~2 GB box is best for a handful of simultaneous users.
 - **Firewall:** if using `ufw`, `sudo ufw allow 'Nginx Full'`.

@@ -13,7 +13,11 @@ WorkingDirectory=/opt/sanuvia/my-voice-ai
 # keep model caches inside the app dir (writable by the service user)
 Environment=HF_HOME=/opt/sanuvia/my-voice-ai/.cache/huggingface
 Environment=HF_HUB_DISABLE_XET=1
+# low-memory friendly: cap threads and glibc malloc arenas (keeps RSS ~0.6 GB).
+# Raise OMP/SHERPA threads to your vCPU count if the box has spare CPU + RAM.
 Environment=OMP_NUM_THREADS=2
+Environment=SHERPA_NUM_THREADS=2
+Environment=MALLOC_ARENA_MAX=2
 
 ExecStart=/opt/sanuvia/my-voice-ai/.venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000
 

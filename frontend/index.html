@@ -49,48 +49,12 @@
   <div class="container">
     <section class="hero">
       <h1>Welcome to <span class="gradient-text">Sanuvia AI</span></h1>
-      <p class="lead">Enroll speakers, then transcribe live or from a file — every turn attributed to the right person.</p>
+      <p class="lead">A simple web-based platform designed to assist in 2-person therapeutic sessions (Counselor &amp; Patient). The system captures live audio, identifies speakers based on pre-registered voiceprints, generates therapeutic summaries, and provides AI-powered analysis.</p>
       <div class="cta">
         <a href="/live"><button>▶ Start live session</button></a>
         <a href="/enroll"><button class="secondary">Enroll a speaker</button></a>
       </div>
-      <div class="stats">
-        <div class="stat"><div class="n" id="statSpeakers">—</div><div class="l">Enrolled speakers</div></div>
-        <div class="stat"><div class="n">Live</div><div class="l">Streaming transcription</div></div>
-        <div class="stat"><div class="n">4</div><div class="l">Export formats</div></div>
-      </div>
     </section>
-
-    <div class="card">
-      <div class="toolbar">
-        <h2>Enrolled speakers</h2>
-        <span class="grow"></span>
-        <a href="/enroll"><button class="secondary sm">Manage</button></a>
-      </div>
-      <ul class="speaker-list" id="speakers"></ul>
-    </div>
   </div>
-
-  <script type="module">
-    const $ = (id) => document.getElementById(id);
-    const COLORS = ['#059669','#d97706','#e11d48','#0d9488','#db2777','#ca8a04','#be185d','#15803d'];
-    try {
-      const { speakers } = await (await fetch('/api/speakers')).json();
-      $('statSpeakers').textContent = speakers.length;
-      const ul = $('speakers');
-      if (!speakers.length) { ul.innerHTML = '<div class="empty-state"><div class="e-icon">👤</div><p>No speakers enrolled yet.</p></div>'; }
-      else {
-        ul.innerHTML = '';
-        speakers.forEach((s, i) => {
-          const col = COLORS[i % COLORS.length];
-          const initials = s.name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
-          const li = document.createElement('li');
-          li.innerHTML = `<div class="spk-info"><div class="spk-avatar" style="background:${col}">${initials}</div>
-            <div><div class="spk-name">${s.name}</div><div class="spk-meta">${s.num_samples} sample${s.num_samples!==1?'s':''}</div></div></div>`;
-          ul.appendChild(li);
-        });
-      }
-    } catch { $('statSpeakers').textContent = '0'; }
-  </script>
 </body>
 </html>

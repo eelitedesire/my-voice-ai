@@ -1,8 +1,8 @@
 """Offline processing of an uploaded recording.
 
-Reuses the exact live pipeline (StreamingDiarizer + Whisper) over a whole file,
-then returns timestamped, speaker-attributed, punctuated segments. Implemented as
-a generator that yields progress so the UI can show a real progress bar.
+Reuses the exact live pipeline (StreamingDiarizer + Sherpa-ONNX) over a whole
+file, then returns timestamped, speaker-attributed segments. Implemented as a
+generator that yields progress so the UI can show a real progress bar.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from .config import settings
 from .audio import decode_file
 from .diarization import StreamingDiarizer
 from .enrollment import store
-from . import transcription
+from . import sherpa_asr
 
 
 def iter_process_file(raw: bytes, filename: str = "") -> Iterator[dict]:
@@ -43,9 +43,7 @@ def iter_process_file(raw: bytes, filename: str = "") -> Iterator[dict]:
     segments: list[dict] = []
     for idx, ev in enumerate(raw_segs):
         audio = ev.pop("_audio")
-        text = transcription.transcribe(
-            audio, beam_size=settings.asr_beam_size_batch
-        ).strip()
+        text = sherpa_asr.transcribe_offline(audio).strip()
         if text:
             segments.append({
                 "start": ev["start"], "end": ev["end"],

@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from .config import settings, TUNABLE_FIELDS, BASE_DIR
 from . import audio as audio_utils
-from . import embeddings, vad, transcription, exporters
+from . import embeddings, vad, exporters, sherpa_asr
 from .enrollment import store
 from .session import LiveSession
 from .batch import iter_process_file
@@ -36,8 +36,9 @@ def _warmup_all() -> None:
     print("[startup] loading models...")
     vad.warmup()
     embeddings.warmup()
-    transcription.warmup()
-    print(f"[startup] ready. enrolled speakers: {len(store.list())}")
+    sherpa_asr.warmup()   # single ASR engine: Sherpa-ONNX (live + file upload)
+    print(f"[startup] ready (Sherpa-ONNX ASR). "
+          f"enrolled speakers: {len(store.list())}")
 
 
 # ---------------------------------------------------------------- REST: speakers
@@ -162,8 +163,8 @@ async def ws_stream(ws: WebSocket):
     """Real-time streaming diarization + transcription.
 
     Two cooperating executor tasks: the receive loop runs the diarizer (fast) and
-    the ASR worker runs Whisper on the open speaker block (heavy). Outbound sends
-    are serialized. See backend/session.py for the block model.
+    the ASR worker runs the live ASR engine (Sherpa-ONNX by default) on the open
+    speaker block (heavy). Outbound sends are serialized. See backend/session.py.
     """
     await ws.accept()
     loop = asyncio.get_event_loop()

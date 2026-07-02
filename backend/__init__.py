@@ -1,11 +1,8 @@
-"""Production-grade speaker diarization + recognition backend (SpeechBrain).
+"""Production-grade speaker diarization + recognition backend (SpeechBrain + Sherpa).
 
-IMPORTANT: import ctranslate2 (faster-whisper's backend) *before* torch is ever
-imported. On macOS, loading torch first and ctranslate2 second causes an OpenMP
-runtime clash that segfaults the process. Doing this import here — before any
-submodule pulls in torch — guarantees the safe ordering for every entry point.
+The KMP_DUPLICATE_LIB_OK guard protects against a duplicate OpenMP runtime when
+torch (SpeechBrain) and onnxruntime (Sherpa-ONNX ASR) coexist in one process.
+It must be set before torch/onnxruntime are imported, so it lives here.
 """
-try:  # pragma: no cover - environment dependent
-    import ctranslate2  # noqa: F401
-except Exception:
-    pass
+import os
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")

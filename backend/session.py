@@ -4,15 +4,18 @@ Concurrency model (two executor-backed tasks per WebSocket):
 
   * ``feed()``     — fast path. Runs the diarizer on each audio chunk, buffers
                      audio, and maintains the *speaker block* timeline. Never runs
-                     Whisper, so speaker/VAD events stay real-time.
-  * ``asr_tick()`` — heavy path. Periodically runs the streaming decoder on the
+                     ASR, so speaker/VAD events stay real-time.
+  * ``asr_tick()`` — heavy path. Periodically runs the live ASR engine on the
                      open block (emitting refined partials) and finalizes any
-                     blocks the diarizer has closed. Only this task touches Whisper,
+                     blocks the diarizer has closed. Only this task touches ASR,
                      so there is never concurrent decoding.
 
+The ASR engine is Sherpa-ONNX streaming Zipformer (see ``make_transcriber``), used
+for both live sessions and the offline file-upload/export path (``batch.py``).
+
 A **block** == one contiguous turn of a single identified speaker, exactly as the
-diarizer defines it. Each block owns one ``StreamingTranscriber``; text therefore
-can never mix two speakers, and speaker labels persist while text streams.
+diarizer defines it. Each block owns its own transcriber; text therefore can never
+mix two speakers, and speaker labels persist while text streams.
 """
 from __future__ import annotations
 
@@ -23,8 +26,17 @@ import numpy as np
 
 from .config import settings
 from .diarization import StreamingDiarizer, UNKNOWN, UNKNOWN_NAME
-from .streaming_asr import StreamingTranscriber
 from .enrollment import ProfileSnapshot
+
+
+def make_transcriber():
+    """Per-block live ASR transcriber (Sherpa-ONNX streaming Zipformer).
+
+    Exposes insert_audio / step / finalize / pending_sec, so the rest of the
+    session is engine-agnostic.
+    """
+    from .sherpa_asr import SherpaBlockTranscriber
+    return SherpaBlockTranscriber()
 
 
 class RollingAudio:
@@ -58,7 +70,7 @@ class Block:
     start_sample: int
     end_sample: int
     confidence: float
-    transcriber: StreamingTranscriber = field(default_factory=StreamingTranscriber)
+    transcriber: object = field(default_factory=make_transcriber)
     fed_until: int = 0
     last_emitted: str = ""
 

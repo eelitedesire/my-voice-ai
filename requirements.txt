@@ -10,8 +10,11 @@ torchaudio==2.2.2
 speechbrain==1.0.3
 # speechbrain 1.0.3 still passes use_auth_token=, removed in huggingface_hub>=0.24
 huggingface_hub==0.23.5
-faster-whisper==1.0.3
 silero-vad==5.1
+# ASR engine (Sherpa-ONNX streaming Zipformer, live + file upload). Pin 1.10.46
+# on macOS 13 (Ventura): newer wheels bundle an onnxruntime built for macOS >= 15
+# that fails to load there. Newer macOS may use a newer release.
+sherpa-onnx==1.10.46
 numpy<2.0
 soundfile==0.12.1
 scipy>=1.11,<1.14

@@ -45,8 +45,6 @@ class Settings:
     # ---- Models ----
     embedding_model: str = _env_str("EMBED_MODEL", "speechbrain/spkrec-ecapa-voxceleb")
     embedding_dim: int = 192
-    whisper_model: str = _env_str("WHISPER_MODEL", "base.en")   # tiny/base/small(.en)
-    whisper_compute_type: str = _env_str("WHISPER_COMPUTE", "int8")  # CPU-friendly
     device: str = _env_str("DEVICE", "cpu")
 
     # ---- Voice Activity Detection ----
@@ -82,15 +80,17 @@ class Settings:
     # Finalize (and transcribe) a turn after this much trailing silence.
     finalize_silence_ms: int = _env_int("FINALIZE_SILENCE_MS", 700)
 
-    # ---- Streaming ASR (live partial transcription) ----
+    # ---- ASR engine: Sherpa-ONNX streaming Zipformer (live + file upload) ----
+    # Model dir with encoder/decoder/joiner .onnx + tokens.txt.
+    sherpa_model_dir: str = _env_str(
+        "SHERPA_MODEL_DIR", str(MODELS_DIR / "sherpa-streaming-zipformer-en")
+    )
+    sherpa_num_threads: int = _env_int("SHERPA_NUM_THREADS", 2)
     # How often the ASR worker attempts an incremental decode pass.
     asr_tick_sec: float = _env_float("ASR_TICK_SEC", 0.45)
-    # Minimum unconfirmed audio before a decode pass is worthwhile.
-    asr_min_chunk_sec: float = _env_float("ASR_MIN_CHUNK_SEC", 0.6)
-    # Beam size for streaming passes (1 = greedy = fastest/lowest latency).
-    asr_beam_size: int = _env_int("ASR_BEAM_SIZE", 1)
-    # Beam size for offline file transcription (quality over latency).
-    asr_beam_size_batch: int = _env_int("ASR_BEAM_SIZE_BATCH", 5)
+    # Minimum undecoded audio before a decode pass is worthwhile. Sherpa decoding
+    # is cheap and incremental, so a small value gives smoother partials.
+    asr_min_chunk_sec: float = _env_float("ASR_MIN_CHUNK_SEC", 0.3)
 
     def public(self) -> dict:
         """Config safe to expose to the UI / tuning endpoint."""
@@ -105,5 +105,5 @@ TUNABLE_FIELDS = {
     "vad_threshold", "id_threshold", "scoring", "ema_alpha", "switch_margin",
     "min_switch_windows", "min_segment_sec", "window_sec", "hop_sec",
     "min_embed_sec", "finalize_silence_ms", "enable_transcription",
-    "asr_tick_sec", "asr_min_chunk_sec", "asr_beam_size", "asr_beam_size_batch",
+    "asr_tick_sec", "asr_min_chunk_sec", "sherpa_num_threads",
 }

@@ -1,10 +1,11 @@
 // AudioWorklet that forwards raw mono Float32 PCM frames to the main thread.
 // Buffers to ~1024-sample chunks to keep postMessage overhead low.
 class PCMProcessor extends AudioWorkletProcessor {
-  constructor() {
+  constructor(options) {
     super();
     this._buf = new Float32Array(0);
-    this._chunk = 1024;
+    // Configurable frame size (samples). Smaller = lower latency, more messages.
+    this._chunk = (options && options.processorOptions && options.processorOptions.chunk) || 512;
   }
   process(inputs) {
     const input = inputs[0];

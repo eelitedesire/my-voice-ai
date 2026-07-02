@@ -86,11 +86,15 @@ class Settings:
         "SHERPA_MODEL_DIR", str(MODELS_DIR / "sherpa-streaming-zipformer-en")
     )
     sherpa_num_threads: int = _env_int("SHERPA_NUM_THREADS", 2)
-    # How often the ASR worker attempts an incremental decode pass.
-    asr_tick_sec: float = _env_float("ASR_TICK_SEC", 0.45)
-    # Minimum undecoded audio before a decode pass is worthwhile. Sherpa decoding
-    # is cheap and incremental, so a small value gives smoother partials.
-    asr_min_chunk_sec: float = _env_float("ASR_MIN_CHUNK_SEC", 0.3)
+    # How often the ASR worker attempts an incremental decode pass (lower = fresher
+    # partials, more CPU). Sweet spot ~0.15-0.20 s on CPU.
+    asr_tick_sec: float = _env_float("ASR_TICK_SEC", 0.20)
+    # Minimum undecoded audio before a decode pass is worthwhile. Must be <= the
+    # tick or low ticks would be skipped. Sherpa decoding is cheap + incremental.
+    asr_min_chunk_sec: float = _env_float("ASR_MIN_CHUNK_SEC", 0.10)
+    # Client audio worklet chunk (samples @16 kHz) — how often the browser ships a
+    # PCM frame. 512 = 32 ms. Sent to the frontend via /api/config.
+    client_chunk_samples: int = _env_int("CLIENT_CHUNK_SAMPLES", 512)
 
     def public(self) -> dict:
         """Config safe to expose to the UI / tuning endpoint."""

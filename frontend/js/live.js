@@ -3,6 +3,7 @@ import { TranscriptView, exportTranscript, colorFor, fmtClock } from '/js/transc
 
 const $ = (id) => document.getElementById(id);
 let ws = null, rec = null, running = false, busy = false;
+let clientChunk = 512;   // audio worklet frame size; overridden from /api/config
 let startTime = 0, timerInt = null, exportName = 'sanuvia-transcript';
 const view = new TranscriptView($('transcript'), { autoscroll: true });
 
@@ -52,6 +53,7 @@ const CFG = [
 ];
 async function loadConfig() {
   const cfg = await (await fetch('/api/config')).json();
+  if (cfg.client_chunk_samples) clientChunk = cfg.client_chunk_samples;
   const grid = $('configGrid'); grid.innerHTML = '';
   for (const [k, label, min, max, step] of CFG) {
     const d = document.createElement('div');
@@ -91,7 +93,7 @@ async function start() {
 
   ws.onopen = async () => {
     $('connDot').className = 'dot live'; $('connText').textContent = 'connected';
-    rec = new MicRecorder({ onChunk: (f32) => { pushLevel(f32); if (ws?.readyState === 1) ws.send(floatToInt16(f32).buffer); } });
+    rec = new MicRecorder({ chunkSize: clientChunk, onChunk: (f32) => { pushLevel(f32); if (ws?.readyState === 1) ws.send(floatToInt16(f32).buffer); } });
     try { await rec.start(); } catch (e) { toast('Mic error: ' + e.message, 'err'); return stop(); }
     ws.send(JSON.stringify({ type: 'start', sample_rate: rec.sampleRate }));
     running = true;

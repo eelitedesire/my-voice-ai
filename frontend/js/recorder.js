@@ -2,9 +2,10 @@
 //   - onChunk(Float32Array) called continuously with mono PCM at ctx.sampleRate
 //   - encodeWav(chunks, sampleRate) -> Blob (16-bit PCM WAV) for enrollment uploads
 export class MicRecorder {
-  constructor({ onChunk = null, targetSampleRate = 16000 } = {}) {
+  constructor({ onChunk = null, targetSampleRate = 16000, chunkSize = 512 } = {}) {
     this.onChunk = onChunk;
     this.targetSampleRate = targetSampleRate;
+    this.chunkSize = chunkSize;
     this.ctx = null;
     this.stream = null;
     this.node = null;
@@ -30,7 +31,9 @@ export class MicRecorder {
     });
     await this.ctx.audioWorklet.addModule('/js/pcm-worklet.js');
     this.source = this.ctx.createMediaStreamSource(this.stream);
-    this.node = new AudioWorkletNode(this.ctx, 'pcm-processor');
+    this.node = new AudioWorkletNode(this.ctx, 'pcm-processor', {
+      processorOptions: { chunk: this.chunkSize },
+    });
     this.node.port.onmessage = (e) => {
       const chunk = e.data; // Float32Array
       if (!this.recording) return;

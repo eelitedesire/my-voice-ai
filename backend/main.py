@@ -182,13 +182,14 @@ async def ws_stream(ws: WebSocket):
                 await ws.send_json(ev)
 
     async def asr_worker() -> None:
+        # Decode first, THEN sleep, so a fresh partial is emitted immediately when
+        # audio is available instead of waiting a full tick up front.
         try:
             while not stop_flag.is_set():
+                if session is not None:
+                    evs = await loop.run_in_executor(None, session.asr_tick)
+                    await send(evs)
                 await asyncio.sleep(settings.asr_tick_sec)
-                if session is None:
-                    continue
-                evs = await loop.run_in_executor(None, session.asr_tick)
-                await send(evs)
         except Exception:  # pragma: no cover
             pass
 

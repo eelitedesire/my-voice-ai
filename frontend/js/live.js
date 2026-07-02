@@ -47,30 +47,17 @@ function drawWave() {
 function startTimer() { startTime = Date.now(); timerInt = setInterval(() => { $('timer').textContent = fmtClock((Date.now() - startTime) / 1000); }, 250); }
 function stopTimer() { clearInterval(timerInt); }
 
-// ---------- config panel ----------
-const CFG = [
-  ['id_threshold', 'ID threshold', 0, 1, 0.01], ['switch_margin', 'Switch margin', 0, 0.5, 0.01],
-  ['min_switch_windows', 'Switch windows', 1, 10, 1], ['ema_alpha', 'EMA alpha', 0.1, 1, 0.05],
-  ['change_sim_threshold', 'Change sensitivity', 0.2, 0.9, 0.05],
-  ['asr_tick_sec', 'ASR tick (s)', 0.2, 2, 0.05], ['vad_threshold', 'VAD threshold', 0.1, 0.9, 0.05],
-];
+// ---------- startup config (client chunk size + enrolled count) ----------
 async function loadConfig() {
-  const cfg = await (await fetch('/api/config')).json();
-  if (cfg.client_chunk_samples) clientChunk = cfg.client_chunk_samples;
-  const grid = $('configGrid'); grid.innerHTML = '';
-  for (const [k, label, min, max, step] of CFG) {
-    const d = document.createElement('div');
-    d.innerHTML = `<small>${label}</small><input type="number" id="cfg_${k}" value="${cfg[k]}" min="${min}" max="${max}" step="${step}">`;
-    grid.appendChild(d);
-  }
-  const { speakers } = await (await fetch('/api/speakers')).json();
-  $('spkCount').textContent = `${speakers.length} enrolled`;
+  try {
+    const cfg = await (await fetch('/api/config')).json();
+    if (cfg.client_chunk_samples) clientChunk = cfg.client_chunk_samples;
+  } catch {}
+  try {
+    const { speakers } = await (await fetch('/api/speakers')).json();
+    $('spkCount').textContent = `${speakers.length} enrolled`;
+  } catch {}
 }
-$('applyCfg').addEventListener('click', async () => {
-  const body = {}; for (const [k] of CFG) body[k] = parseFloat($(`cfg_${k}`).value);
-  await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  toast('Config applied', 'ok');
-});
 
 // ---------- toolbar (search / copy) ----------
 $('search').addEventListener('input', (e) => view.search(e.target.value));

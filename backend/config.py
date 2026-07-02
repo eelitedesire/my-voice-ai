@@ -65,12 +65,18 @@ class Settings:
     # Score aggregation across a speaker's enrolled samples: "centroid" | "max" | "mean"
     scoring: str = _env_str("SCORING", "max")
 
+    # ---- Speaker-change detection (segmentation) ----
+    # A window whose cosine similarity to the current segment's acoustic centroid
+    # falls below this is evidence of a DIFFERENT speaker (works for known AND
+    # unknown speakers). Lower = fewer splits; higher = more sensitive.
+    change_sim_threshold: float = _env_float("SPEAKER_CHANGE_SIM", 0.5)
+
     # ---- Stability / anti-flicker (hysteresis) ----
     # EMA smoothing factor for per-speaker similarity scores.
     ema_alpha: float = _env_float("EMA_ALPHA", 0.6)
-    # A different speaker must beat the current one by this cosine margin...
+    # A different KNOWN speaker must beat the current one by this cosine margin...
     switch_margin: float = _env_float("SWITCH_MARGIN", 0.06)
-    # ...for this many consecutive windows before the active speaker actually switches.
+    # ...and a change (acoustic or label) must persist this many consecutive windows.
     min_switch_windows: int = _env_int("MIN_SWITCH_WINDOWS", 2)
     # Minimum duration before a segment can be finalized/emitted as a turn.
     min_segment_sec: float = _env_float("MIN_SEGMENT_SEC", 0.8)
@@ -107,7 +113,7 @@ settings = Settings()
 # Fields the /config endpoint is allowed to mutate at runtime.
 TUNABLE_FIELDS = {
     "vad_threshold", "id_threshold", "scoring", "ema_alpha", "switch_margin",
-    "min_switch_windows", "min_segment_sec", "window_sec", "hop_sec",
+    "min_switch_windows", "change_sim_threshold", "min_segment_sec", "window_sec", "hop_sec",
     "min_embed_sec", "finalize_silence_ms", "enable_transcription",
     "asr_tick_sec", "asr_min_chunk_sec", "sherpa_num_threads",
 }

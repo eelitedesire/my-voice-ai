@@ -1,10 +1,12 @@
-// Chat-style transcript renderer (WhatsApp-like) used by the live page.
-// Public API is unchanged: new TranscriptView(el,{autoscroll}), upsert(ev),
-// clear(), search(q), segments(), plainText(); plus colorFor/fmtClock/export.
+// Chat-style transcript renderer (WhatsApp-like), all-left group style.
+// Public API unchanged: new TranscriptView(el,{autoscroll}), upsert(ev), clear(),
+// search(q), segments(), plainText(); plus colorFor/fmtClock/exportTranscript.
 //
-// Events (block_open / transcript_partial / transcript_final) carry a block_id =
-// one diarizer turn. Consecutive turns from the SAME speaker within MERGE_GAP are
-// merged into one bubble group; a different speaker starts a new group.
+// Evidence-based labeling: a turn opens as a PENDING (unlabeled) bubble that
+// streams text immediately; when the backend confidently identifies the speaker
+// it sends {type:'block_label', ...} (or a non-pending transcript_* event) and the
+// bubble is relabeled IN PLACE (no reposition, no flicker). A turn that is never
+// identified finalizes as "Unknown Speaker".
 
 const COLORS = ['#059669', '#d97706', '#e11d48', '#0d9488', '#db2777', '#ca8a04', '#be185d', '#15803d'];
 const _assigned = {};
@@ -39,6 +41,8 @@ function rgba(hex, a) {
   if (!m) return `rgba(100,116,139,${a})`;
   return `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${a})`;
 }
+const keyOf = (ev, id) => ev.pending ? `pending#${id}`
+  : (ev.unknown ? 'unknown' : (ev.speaker_id || 'unknown'));
 
 export class TranscriptView {
   constructor(container, { autoscroll = true } = {}) {
@@ -47,7 +51,6 @@ export class TranscriptView {
     this.autoscroll = autoscroll;
     this.blocks = new Map();   // block_id -> { data, lineEl, group }
     this.groups = [];          // ordered bubble groups
-    this._sides = [];          // speaker-key order → side assignment
     this.query = '';
     this._stick = true;
     this.box.addEventListener('scroll', () => {
@@ -55,50 +58,67 @@ export class TranscriptView {
     });
   }
 
-  clear() {
-    this.blocks.clear(); this.groups = []; this._sides = [];
-    this.box.innerHTML = '';
-  }
-
-  _sideFor(key) {
-    let i = this._sides.indexOf(key);
-    if (i < 0) { this._sides.push(key); i = this._sides.length - 1; }
-    return i % 2 === 0 ? 'left' : 'right';
-  }
+  clear() { this.blocks.clear(); this.groups = []; this.box.innerHTML = ''; }
 
   _newGroup(key, ev) {
-    const col = colorFor(ev.speaker_id, ev.unknown);
-    const side = this._sideFor(key);
     const g = document.createElement('div');
-    g.className = `msg ${side}${ev.unknown ? ' unknown' : ''}`;
+    g.className = 'msg left';
     g.innerHTML =
-      `<div class="msg-head"><span class="avatar" style="background:${col}">${initialsOf(ev.speaker, ev.unknown)}</span>` +
-      `<span class="who" style="color:${col}">${esc(ev.speaker)}</span></div>` +
+      `<div class="msg-head"><span class="avatar"></span><span class="who"></span></div>` +
       `<div class="bubble"><span class="btime"></span></div>`;
     this.box.appendChild(g);
-    const bubble = g.querySelector('.bubble');
-    // translucent tints so bubbles read correctly over both light and dark themes
-    bubble.style.background = ev.unknown ? 'rgba(148,163,184,0.14)' : rgba(col, 0.10);
-    bubble.style.borderColor = ev.unknown ? 'rgba(148,163,184,0.45)' : rgba(col, 0.30);
     const group = {
-      key, speaker: ev.speaker, unknown: !!ev.unknown, startTime: ev.start,
-      lastEnd: ev.end ?? ev.start, groupEl: g, bubbleEl: bubble,
-      timeEl: g.querySelector('.btime'), blockIds: [],
+      key, speaker: ev.speaker, unknown: !!ev.unknown, pending: !!ev.pending,
+      startTime: ev.start ?? 0, lastEnd: ev.end ?? ev.start ?? 0,
+      groupEl: g, bubbleEl: g.querySelector('.bubble'), timeEl: g.querySelector('.btime'),
+      avatarEl: g.querySelector('.avatar'), whoEl: g.querySelector('.who'), blockIds: [],
     };
+    this._style(group, ev);
     this.groups.push(group);
     return group;
   }
 
+  // apply header + bubble styling for the group's current label state
+  _style(group, ev) {
+    const pend = !!ev.pending;
+    group.pending = pend;
+    group.groupEl.classList.toggle('pending', pend);
+    group.groupEl.classList.toggle('unknown', !pend && !!ev.unknown);
+    if (pend) {
+      group.avatarEl.style.background = '#94a3b8';
+      group.avatarEl.textContent = '';
+      group.whoEl.textContent = 'Identifying…';
+      group.whoEl.style.color = 'var(--faint)';
+      group.bubbleEl.style.background = 'rgba(148,163,184,0.12)';
+      group.bubbleEl.style.borderColor = 'rgba(148,163,184,0.35)';
+    } else {
+      const col = colorFor(ev.speaker_id, ev.unknown);
+      group.avatarEl.style.background = col;
+      group.avatarEl.textContent = initialsOf(ev.speaker, ev.unknown);
+      group.whoEl.textContent = ev.speaker;
+      group.whoEl.style.color = ev.unknown ? '' : col;
+      group.bubbleEl.style.background = ev.unknown ? 'rgba(148,163,184,0.14)' : rgba(col, 0.10);
+      group.bubbleEl.style.borderColor = ev.unknown ? 'rgba(148,163,184,0.45)' : rgba(col, 0.30);
+      group.key = ev.unknown ? 'unknown' : (ev.speaker_id || 'unknown');
+      group.speaker = ev.speaker; group.unknown = !!ev.unknown;
+    }
+  }
+
   upsert(ev) {
+    if (ev.type === 'block_label') return this._relabel(ev);
+
     const id = ev.block_id;
-    const key = ev.unknown ? 'unknown' : (ev.speaker_id || 'unknown');
     const hasText = (ev.text || '').trim().length > 0;
     let entry = this.blocks.get(id);
 
     if (!entry) {
+      const key = keyOf(ev, id);
       const last = this.groups[this.groups.length - 1];
-      const gap = last ? (ev.start - last.lastEnd) : Infinity;
-      const group = (last && last.key === key && gap <= MERGE_GAP) ? last : this._newGroup(key, ev);
+      // never merge across the 'unknown' key: two consecutive unknowns may be
+      // different people, so keep them as separate bubbles.
+      const mergeable = last && !ev.pending && key !== 'unknown' && last.key === key
+        && !last.pending && ((ev.start ?? 0) - last.lastEnd) <= MERGE_GAP;
+      const group = mergeable ? last : this._newGroup(key, ev);
       const lineEl = document.createElement('div');
       lineEl.className = 'line';
       group.bubbleEl.insertBefore(lineEl, group.timeEl);
@@ -107,7 +127,7 @@ export class TranscriptView {
       group.blockIds.push(id);
     }
 
-    // drop an empty finalized block (and its group if it becomes empty)
+    // empty finalized block → drop it (and its group if now empty)
     if (ev.is_final && !hasText) {
       entry.lineEl.remove();
       const g = entry.group;
@@ -122,19 +142,42 @@ export class TranscriptView {
       entry.lineEl.innerHTML = highlight(ev.text, this.query);
       entry.lineEl.classList.toggle('streaming', ev.is_final === false);
     } else {
-      entry.lineEl.innerHTML = TYPING;      // block opened, no words yet
+      entry.lineEl.innerHTML = TYPING;
       entry.lineEl.classList.remove('streaming');
     }
     const g = entry.group;
-    g.lastEnd = Math.max(g.lastEnd, ev.end ?? ev.start);
+    g.lastEnd = Math.max(g.lastEnd, ev.end ?? ev.start ?? g.lastEnd);
     g.timeEl.textContent = fmtClock(g.startTime);
+
+    // a pending bubble that just became labeled (via a non-pending event) → relabel
+    if (g.pending && ev.pending === false) { this._style(g, ev); this._tryMerge(g); }
     this._scroll();
     this._applyFilter(g);
   }
 
-  _scroll() {
-    if (this.autoscroll && this._stick) this.box.scrollTop = this.box.scrollHeight;
+  _relabel(ev) {
+    const e = this.blocks.get(ev.block_id);
+    if (!e) return;
+    e.data = { ...e.data, speaker: ev.speaker, speaker_id: ev.speaker_id,
+               unknown: ev.unknown, pending: false, confidence: ev.confidence };
+    this._style(e.group, { ...ev, pending: false });
+    this._tryMerge(e.group);
   }
+
+  // merge a just-labeled group into the previous same-speaker group if close in time
+  _tryMerge(g) {
+    const i = this.groups.indexOf(g);
+    if (i <= 0 || g.pending || g.key === 'unknown') return;
+    const prev = this.groups[i - 1];
+    if (prev.pending || prev.key !== g.key || (g.startTime - prev.lastEnd) > MERGE_GAP) return;
+    for (const line of [...g.bubbleEl.querySelectorAll('.line')]) prev.bubbleEl.insertBefore(line, prev.timeEl);
+    for (const id of g.blockIds) { const e = this.blocks.get(id); if (e) e.group = prev; prev.blockIds.push(id); }
+    prev.lastEnd = Math.max(prev.lastEnd, g.lastEnd);
+    g.groupEl.remove();
+    this.groups.splice(i, 1);
+  }
+
+  _scroll() { if (this.autoscroll && this._stick) this.box.scrollTop = this.box.scrollHeight; }
 
   search(q) {
     this.query = q.trim();
@@ -159,10 +202,12 @@ export class TranscriptView {
     return [...this.blocks.values()]
       .map((b) => b.data)
       .filter((d) => (d.text || '').trim())
-      .sort((a, b) => a.start - b.start)
+      .sort((a, b) => (a.start ?? 0) - (b.start ?? 0))
       .map((d) => ({
-        start: d.start, end: d.end ?? d.start, speaker: d.speaker,
-        speaker_id: d.speaker_id, unknown: !!d.unknown, text: (d.text || '').trim(),
+        start: d.start ?? 0, end: d.end ?? d.start ?? 0,
+        speaker: d.pending ? 'Unknown Speaker' : (d.speaker || 'Unknown Speaker'),
+        speaker_id: d.speaker_id ?? null, unknown: !!d.unknown || !!d.pending,
+        text: (d.text || '').trim(),
         confidence: d.confidence ?? null, asr_confidence: d.asr_confidence ?? null,
       }));
   }
@@ -170,19 +215,4 @@ export class TranscriptView {
   plainText() {
     return this.segments().map((s) => `${fmtClock(s.start)}\n${s.speaker}:\n${s.text}`).join('\n\n');
   }
-}
-
-export async function exportTranscript(segments, format, filename = 'transcript') {
-  if (!segments.length) throw new Error('Nothing to export yet');
-  const r = await fetch('/api/export', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ format, segments, filename }),
-  });
-  if (!r.ok) throw new Error('Export failed');
-  const blob = await r.blob();
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `${filename}.${format}`;
-  a.click();
-  URL.revokeObjectURL(a.href);
 }

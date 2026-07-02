@@ -70,17 +70,17 @@ class Block:
     start_sample: int
     end_sample: int
     confidence: float
+    pending: bool = False        # opened but not yet confidently identified
     transcriber: object = field(default_factory=make_transcriber)
     fed_until: int = 0
     last_emitted: str = ""
 
     def fields(self) -> dict:
-        return {
-            "block_id": self.id,
-            "speaker": self.speaker,
-            "speaker_id": self.speaker_id,
-            "unknown": self.unknown,
-        }
+        if self.pending:
+            return {"block_id": self.id, "speaker": "", "speaker_id": None,
+                    "unknown": False, "pending": True}
+        return {"block_id": self.id, "speaker": self.speaker,
+                "speaker_id": self.speaker_id, "unknown": self.unknown, "pending": False}
 
 
 class LiveSession:
@@ -104,7 +104,9 @@ class LiveSession:
             t = ev["type"]
             if t == "vad":
                 ui.append({"type": "vad", "active": ev["active"]})
-                if not ev["active"]:
+                if ev["active"]:
+                    self._begin_block(self.clock, ui)   # start transcribing immediately
+                else:
                     self._close_open_block(self.clock)
             elif t == "partial":
                 self._on_partial(ev, ui)
@@ -122,65 +124,119 @@ class LiveSession:
         self._close_open_block(self.clock)
         return ui
 
-    def _open(self, ev: dict, start_s: int, ui: list[dict]) -> None:
-        blk = Block(
-            id=self._next_id, speaker_id=ev["speaker_id"], speaker=ev["speaker"],
-            unknown=ev["unknown"], start_sample=start_s, end_sample=start_s,
-            confidence=ev.get("confidence", 0.0), fed_until=start_s,
-        )
+    # ---- evidence-based block lifecycle (labels assigned lazily) ----
+    def _pending_block(self, start_s: int) -> Block:
+        blk = Block(id=self._next_id, speaker_id=None, speaker="", unknown=False,
+                    pending=True, start_sample=start_s, end_sample=start_s,
+                    confidence=0.0, fed_until=start_s)
         self._next_id += 1
-        self.open_block = blk
+        return blk
+
+    def _labeled_block(self, ev: dict, start_s: int) -> Block:
+        blk = Block(id=self._next_id, speaker_id=ev["speaker_id"], speaker=ev["speaker"],
+                    unknown=ev["unknown"], pending=False, start_sample=start_s,
+                    end_sample=start_s, confidence=ev.get("confidence", 0.0), fed_until=start_s)
+        self._next_id += 1
+        return blk
+
+    def _enqueue_final(self, blk: Block) -> None:
+        """Queue a block for finalization; a still-pending block becomes Unknown."""
+        if blk.pending:
+            blk.pending = False
+            blk.unknown = True
+            blk.speaker = UNKNOWN_NAME
+            blk.speaker_id = None
+        self.finalize_queue.append(blk)
+
+    def _begin_block(self, start_s: int, ui: list[dict]) -> None:
+        """Speech onset: open an unlabeled (pending) block and stream ASR now."""
+        with self.lock:
+            if self.open_block is not None:            # safety: close any straggler
+                self.open_block.end_sample = max(self.open_block.end_sample, start_s)
+                self._enqueue_final(self.open_block)
+                self.open_block = None
+            blk = self._pending_block(start_s)
+            self.open_block = blk
         ui.append({"type": "block_open", "start": round(start_s / self.sr, 3),
-                   "confidence": blk.confidence, **blk.fields()})
+                   "confidence": 0.0, **blk.fields()})
 
     def _on_partial(self, ev: dict, ui: list[dict]) -> None:
-        spk = ev["speaker_id"] or UNKNOWN
+        named = not ev["unknown"]
         start_s = int(round(ev["start"] * self.sr))
         end_s = int(round(ev["end"] * self.sr))
+        opened = relabel = None
         with self.lock:
             cur = self.open_block
-            cur_spk = (cur.speaker_id or UNKNOWN) if cur else None
             if cur is None:
-                self._open(ev, start_s, ui)
-            elif cur_spk != spk:
-                # speaker changed without an explicit segment (safety net)
-                cur.end_sample = start_s
-                self.finalize_queue.append(cur)
-                self.open_block = None
-                self._open(ev, start_s, ui)
-            if self.open_block is not None:
-                self.open_block.end_sample = max(self.open_block.end_sample, end_s)
-                self.open_block.confidence = ev["confidence"]
+                cur = self._labeled_block(ev, start_s) if named else self._pending_block(start_s)
+                self.open_block = cur
+                opened = cur
+            elif named:
+                if cur.pending:                         # evidence arrived -> label it
+                    cur.pending = False
+                    cur.speaker_id, cur.speaker, cur.unknown = ev["speaker_id"], ev["speaker"], False
+                    relabel = cur
+                elif cur.speaker_id != ev["speaker_id"]:
+                    # different known speaker on a partial -> mid-turn change (defensive;
+                    # the diarizer normally precedes this with a segment)
+                    cur.end_sample = max(cur.end_sample, start_s)
+                    self._enqueue_final(cur)
+                    cur = self._labeled_block(ev, start_s)
+                    self.open_block = cur
+                    opened = cur
+            # an UNKNOWN partial while a block is labeled is ignored (keep the label)
+            if cur is not None:
+                cur.end_sample = max(cur.end_sample, end_s)
+                if not cur.pending:
+                    cur.confidence = ev["confidence"]
+        if opened is not None:
+            ui.append({"type": "block_open", "start": round(opened.start_sample / self.sr, 3),
+                       "confidence": opened.confidence, **opened.fields()})
+        if relabel is not None:
+            ui.append({"type": "block_label", "confidence": round(ev["confidence"], 3),
+                       **relabel.fields()})
         ui.append({"type": "now", "confidence": ev["confidence"],
-                   "speaker": ev["speaker"], "speaker_id": ev["speaker_id"],
-                   "unknown": ev["unknown"]})
+                   "speaker": ev["speaker"], "speaker_id": ev["speaker_id"], "unknown": ev["unknown"]})
 
     def _on_segment(self, ev: dict, ui: list[dict]) -> None:
+        # A segment marks the end of one acoustic speaker span (the diarizer's
+        # change-point detector fired, or the turn ended). Always finalize the
+        # current block; the next partial opens a fresh block for the new speaker.
+        named = not ev["unknown"]
         end_s = int(round(ev["end"] * self.sr))
+        relabel = None
         with self.lock:
             cur = self.open_block
             if cur is not None:
                 cur.end_sample = max(cur.end_sample, end_s)
-                # diarizer's segment speaker is authoritative
-                cur.speaker, cur.speaker_id = ev["speaker"], ev["speaker_id"]
-                cur.unknown, cur.confidence = ev["unknown"], ev["confidence"]
-                self.finalize_queue.append(cur)
+                if named:
+                    if cur.pending:
+                        cur.pending = False
+                        relabel = cur
+                    cur.speaker_id, cur.speaker, cur.unknown = ev["speaker_id"], ev["speaker"], False
+                    cur.confidence = ev["confidence"]
+                    self.finalize_queue.append(cur)
+                else:
+                    # unknown span ends -> pending becomes Unknown; a known block keeps its label
+                    self._enqueue_final(cur)
                 self.open_block = None
             else:
                 start_s = int(round(ev["start"] * self.sr))
-                blk = Block(
-                    id=self._next_id, speaker_id=ev["speaker_id"], speaker=ev["speaker"],
-                    unknown=ev["unknown"], start_sample=start_s, end_sample=end_s,
-                    confidence=ev["confidence"], fed_until=start_s,
-                )
-                self._next_id += 1
-                self.finalize_queue.append(blk)
+                if named:
+                    blk = self._labeled_block(ev, start_s); blk.end_sample = end_s
+                    self.finalize_queue.append(blk)
+                else:
+                    blk = self._pending_block(start_s); blk.end_sample = end_s
+                    self._enqueue_final(blk)
+        if relabel is not None:
+            ui.append({"type": "block_label", "confidence": round(ev["confidence"], 3),
+                       **relabel.fields()})
 
     def _close_open_block(self, end_sample: int) -> None:
         with self.lock:
             if self.open_block is not None:
                 self.open_block.end_sample = max(self.open_block.end_sample, end_sample)
-                self.finalize_queue.append(self.open_block)
+                self._enqueue_final(self.open_block)     # pending -> Unknown at finalize
                 self.open_block = None
 
     # -------------------------------------------------- heavy path (streaming ASR)

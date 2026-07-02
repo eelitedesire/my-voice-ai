@@ -1,5 +1,5 @@
 import { MicRecorder, floatToInt16 } from '/js/recorder.js';
-import { TranscriptView, exportTranscript, colorFor, fmtClock } from '/js/transcript.js';
+import { TranscriptView, colorFor, fmtClock } from '/js/transcript.js';
 
 const $ = (id) => document.getElementById(id);
 let ws = null, rec = null, running = false, busy = false;
@@ -49,6 +49,7 @@ function stopTimer() { clearInterval(timerInt); }
 const CFG = [
   ['id_threshold', 'ID threshold', 0, 1, 0.01], ['switch_margin', 'Switch margin', 0, 0.5, 0.01],
   ['min_switch_windows', 'Switch windows', 1, 10, 1], ['ema_alpha', 'EMA alpha', 0.1, 1, 0.05],
+  ['change_sim_threshold', 'Change sensitivity', 0.2, 0.9, 0.05],
   ['asr_tick_sec', 'ASR tick (s)', 0.2, 2, 0.05], ['vad_threshold', 'VAD threshold', 0.1, 0.9, 0.05],
 ];
 async function loadConfig() {
@@ -69,19 +70,13 @@ $('applyCfg').addEventListener('click', async () => {
   toast('Config applied', 'ok');
 });
 
-// ---------- toolbar (search / copy / export) ----------
+// ---------- toolbar (search / copy) ----------
 $('search').addEventListener('input', (e) => view.search(e.target.value));
 $('copyBtn').addEventListener('click', async () => {
   const txt = view.plainText();
   if (!txt) return toast('Nothing to copy yet', 'err');
   await navigator.clipboard.writeText(txt); toast('Transcript copied', 'ok');
 });
-const ex = (fmt) => async () => {
-  try { await exportTranscript(view.segments(), fmt, exportName); }
-  catch (e) { toast(e.message, 'err'); }
-};
-$('exTxt').onclick = ex('txt'); $('exJson').onclick = ex('json');
-$('exSrt').onclick = ex('srt'); $('exVtt').onclick = ex('vtt');
 
 // ============================================================ LIVE RECORDING
 async function start() {
@@ -112,6 +107,7 @@ async function start() {
         break;
       case 'now': setNow(ev); break;
       case 'block_open':
+      case 'block_label':
       case 'transcript_partial':
       case 'transcript_final': view.upsert(ev); break;
       case 'error': toast('Server: ' + ev.message, 'err'); break;

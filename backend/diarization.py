@@ -6,11 +6,16 @@ Pipeline per session:
       -> framed at 512 samples, Silero VAD per frame  (speech/silence)
       -> contiguous speech is a "turn"; sliding windows (window_sec / hop_sec)
          inside the turn are embedded with ECAPA
-      -> each window embedding is scored (cosine) against every enrolled speaker
-      -> per-speaker scores are EMA-smoothed; the active speaker is chosen with
-         hysteresis (margin + consecutive-window requirement) to prevent flicker
-      -> below id_threshold => "Unknown Speaker"
-      -> sub-segments are emitted on speaker switch or on trailing silence
+      -> SEGMENTATION is acoustic: each window is compared (cosine) to a running
+         centroid of the current segment; when it drops below change_sim_threshold
+         for min_switch_windows consecutive windows, a speaker change is confirmed
+         and the segment is split. This works for known AND unknown speakers, so two
+         different unknown speakers in a row are kept apart.
+      -> LABELING is separate: window embeddings are scored (EMA-smoothed) against
+         enrolled speakers; a segment adopts the best match >= id_threshold, else it
+         stays "Unknown Speaker". (A confirmed enrolled-label change is a second,
+         complementary split trigger for similar-sounding enrolled voices.)
+      -> sub-segments are emitted on a confirmed speaker change or on trailing silence
 
 The diarizer is transport-agnostic: ``process()`` returns a list of event dicts.
 Finalized segments carry their raw audio so the caller can run ASR on them.
@@ -49,14 +54,13 @@ class StreamingDiarizer:
         self._turn_start = 0            # global sample idx where the current turn began
         self._next_window = 0           # turn-relative sample idx at which to embed next
 
-        # ---- sub-segment (single-speaker span within a turn) ----
+        # ---- current sub-segment = one acoustic speaker span within a turn ----
         self._seg_start = 0             # global sample idx
-        self._active = None             # active speaker label (id or UNKNOWN) or None
-
-        # ---- hysteresis / smoothing ----
-        self._ema = None                # np.array aligned to profiles order
-        self._switch_label = None
-        self._switch_count = 0
+        self._active = None             # segment label (enrolled id or UNKNOWN) or None
+        self._seg_centroid = None       # running mean embedding = acoustic identity
+        self._seg_n = 0                 # windows absorbed into the centroid
+        self._change_count = 0          # consecutive change-vote windows (hysteresis)
+        self._ema = None                # enrolled-score EMA (labeling), reset per segment
 
     # ---------- config-derived sizes ----------
     @property
@@ -119,9 +123,10 @@ class StreamingDiarizer:
         self._seg_start = self._clock
         self._next_window = self._win_n
         self._active = None
+        self._seg_centroid = None
+        self._seg_n = 0
+        self._change_count = 0
         self._ema = None
-        self._switch_label = None
-        self._switch_count = 0
         events.append({"type": "vad", "active": True})
 
     def _end_turn(self, events: list[dict]) -> None:
@@ -132,10 +137,6 @@ class StreamingDiarizer:
         events.append({"type": "vad", "active": False})
 
     def _maybe_score_window(self, events: list[dict]) -> None:
-        if len(self.profiles) == 0:
-            # no enrolled speakers -> everything is Unknown, but still segment it
-            self._route_label(UNKNOWN, 0.0, events)
-            return
         while len(self._turn_audio) >= self._next_window:
             end = self._next_window
             start = max(0, end - self._win_n)
@@ -147,21 +148,67 @@ class StreamingDiarizer:
         emb = embed(window)
         if emb is None:
             return
-        raw = self._raw_scores(emb)             # (N,) cosine per speaker
-        # EMA smoothing
-        if self._ema is None:
-            self._ema = raw.copy()
-        else:
-            a = settings.ema_alpha
-            self._ema = a * raw + (1 - a) * self._ema
+        raw = self._raw_scores(emb)             # (N,) cosine vs enrolled (empty if none)
 
-        best_i = int(np.argmax(self._ema))
-        best_score = float(self._ema[best_i])
-        if best_score >= settings.id_threshold:
-            candidate = self.profiles.ids[best_i]
+        if self._seg_centroid is None:
+            # first window of the turn -> segment starts at the speech onset
+            self._begin_segment(emb, raw, self._turn_start)
         else:
-            candidate = UNKNOWN
-        self._route_label(candidate, best_score, events, ema=self._ema)
+            # --- labeling: EMA-smoothed enrolled scores for the CURRENT segment ---
+            self._ema = settings.ema_alpha * raw + (1 - settings.ema_alpha) * self._ema
+            best_score = float(self._ema.max()) if self._ema.size else 0.0
+            cand = (self.profiles.ids[int(np.argmax(self._ema))]
+                    if (self._ema.size and best_score >= settings.id_threshold) else UNKNOWN)
+
+            # --- segmentation: acoustic change (works for known AND unknown) ---
+            sim = float(np.dot(emb, self._seg_centroid))
+            acoustic_change = sim < settings.change_sim_threshold
+            # a second, complementary trigger for similar-sounding *enrolled* voices
+            label_change = (self._active not in (None, UNKNOWN) and cand != UNKNOWN
+                            and cand != self._active
+                            and (best_score - self._current_active_score()) >= settings.switch_margin)
+
+            if acoustic_change or label_change:
+                self._change_count += 1
+                if self._change_count >= settings.min_switch_windows:
+                    self._finalize_segment(events, end=self._clock)   # close previous speaker
+                    self._begin_segment(emb, raw, self._clock)        # open the new one
+            else:
+                self._change_count = 0
+                self._absorb(emb)
+                # sticky labeling: adopt/keep a known id; never downgrade known->unknown
+                if cand != UNKNOWN:
+                    self._active = cand
+                elif self._active is None:
+                    self._active = UNKNOWN
+
+        best = float(self._ema.max()) if (self._ema is not None and self._ema.size) else 0.0
+        events.append({
+            "type": "partial",
+            **self._label_fields(self._active),
+            "confidence": round(best, 4),
+            "start": round(self._seg_start / self.sr, 3),
+            "end": round(self._clock / self.sr, 3),
+        })
+
+    def _begin_segment(self, emb: np.ndarray, raw: np.ndarray, start: int) -> None:
+        """Start a new single-speaker segment anchored on this window's embedding."""
+        self._seg_start = start
+        self._seg_centroid = emb.copy()
+        self._seg_n = 1
+        self._change_count = 0
+        self._ema = raw.copy()
+        if raw.size and float(raw.max()) >= settings.id_threshold:
+            self._active = self.profiles.ids[int(np.argmax(raw))]
+        else:
+            self._active = UNKNOWN
+
+    def _absorb(self, emb: np.ndarray) -> None:
+        """Fold a same-speaker window into the running (renormalized) centroid."""
+        self._seg_n += 1
+        c = self._seg_centroid + (emb - self._seg_centroid) / self._seg_n
+        n = float(np.linalg.norm(c))
+        self._seg_centroid = (c / n) if n > 1e-9 else c
 
     def _raw_scores(self, emb: np.ndarray) -> np.ndarray:
         mode = settings.scoring
@@ -182,42 +229,6 @@ class StreamingDiarizer:
         except ValueError:
             return settings.id_threshold
         return float(self._ema[idx])
-
-    def _route_label(self, candidate: str, score: float, events: list[dict],
-                     ema: np.ndarray | None = None) -> None:
-        """Apply hysteresis, split sub-segments on confirmed switches, emit partials."""
-        if self._active is None:
-            self._active = candidate
-            self._seg_start = self._turn_start
-        elif candidate == self._active:
-            self._switch_label = None
-            self._switch_count = 0
-        else:
-            # only count as a switch if the challenger beats the incumbent by margin
-            if score - self._current_active_score() >= settings.switch_margin:
-                if candidate == self._switch_label:
-                    self._switch_count += 1
-                else:
-                    self._switch_label = candidate
-                    self._switch_count = 1
-                if self._switch_count >= settings.min_switch_windows:
-                    # confirmed speaker change: finalize the previous span
-                    self._finalize_segment(events, end=self._clock)
-                    self._active = candidate
-                    self._seg_start = self._clock
-                    self._switch_label = None
-                    self._switch_count = 0
-            else:
-                self._switch_label = None
-                self._switch_count = 0
-
-        events.append({
-            "type": "partial",
-            **self._label_fields(self._active),
-            "confidence": round(max(score, self._current_active_score()), 4),
-            "start": round(self._seg_start / self.sr, 3),
-            "end": round(self._clock / self.sr, 3),
-        })
 
     def _finalize_segment(self, events: list[dict], end: int) -> None:
         if self._active is None:

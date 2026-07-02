@@ -3,16 +3,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
 
 from .config import settings, TUNABLE_FIELDS, BASE_DIR
 from . import audio as audio_utils
-from . import embeddings, vad, exporters, sherpa_asr
+from . import embeddings, vad, sherpa_asr
 from .enrollment import store
 from .session import LiveSession
 from .batch import iter_process_file
@@ -132,28 +130,6 @@ async def transcribe_file(file: UploadFile = File(...)):
             yield json.dumps({"stage": "error", "message": str(e)}) + "\n"
 
     return StreamingResponse(gen(), media_type="application/x-ndjson")
-
-
-# ---------------------------------------------------------------- REST: export
-
-class ExportRequest(BaseModel):
-    format: str
-    segments: list[dict[str, Any]]
-    filename: str | None = None
-
-
-@app.post("/api/export")
-async def export_transcript(req: ExportRequest):
-    try:
-        content, media = exporters.export(req.segments, req.format)
-    except KeyError:
-        raise HTTPException(400, f"Unknown export format '{req.format}'")
-    base = (req.filename or "transcript").rsplit(".", 1)[0]
-    name = f"{base}.{req.format.lower()}"
-    return Response(
-        content=content, media_type=media,
-        headers={"Content-Disposition": f'attachment; filename="{name}"'},
-    )
 
 
 # ---------------------------------------------------------------- WebSocket: live

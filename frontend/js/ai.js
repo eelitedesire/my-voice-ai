@@ -23,19 +23,22 @@ const CAT_COLORS = { personal: ['#dbeafe', '#1e40af'], relationship: ['#fce7f3',
   history: ['#e5e7eb', '#374151'], other: ['#f1f5f9', '#334155'] };
 
 async function init() {
+  let data = null;
+  try { data = await (await fetch('/api/prompt-templates')).json(); } catch {}
+  aiEnabled = !!(data && data.ai_enabled);
+
+  // If the AI layer isn't configured, hide the whole card — no technical detail.
+  if (!aiEnabled) { const c = $('aiCard'); if (c) c.remove(); return; }
+
+  $('aiCard').style.display = '';
+  $('aiStatus').textContent = 'ready';
   document.querySelectorAll('.ai-tab').forEach((t) => (t.onclick = () => showTab(t.dataset.tab)));
-  try {
-    const t = await (await fetch('/api/prompt-templates')).json();
-    aiEnabled = !!t.ai_enabled;
-    const sel = $('aiPersona'); sel.innerHTML = '';
-    (t.templates || []).forEach((tp) => {
-      const o = document.createElement('option'); o.value = tp.id; o.textContent = tp.name; o.title = tp.description || '';
-      sel.appendChild(o);
-    });
-    if (t.default) sel.value = t.default;
-    $('aiStatus').textContent = aiEnabled ? 'ready' : 'disabled — set GROQ_API_KEY';
-    if (!aiEnabled) ['aiSend', 'aiInterject', 'aiAnalyze', 'aiInput', 'aiPersona', 'aiSpeaker'].forEach((id) => ($(id).disabled = true));
-  } catch { $('aiStatus').textContent = 'unavailable'; }
+  const sel = $('aiPersona'); sel.innerHTML = '';
+  (data.templates || []).forEach((tp) => {
+    const o = document.createElement('option'); o.value = tp.id; o.textContent = tp.name; o.title = tp.description || '';
+    sel.appendChild(o);
+  });
+  if (data.default) sel.value = data.default;
 
   await loadEnrolled();
   updateSpeakers();

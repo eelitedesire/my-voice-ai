@@ -133,10 +133,12 @@
           <p class="hint">The AI therapist can see the live transcript. Send a message (optionally as <code>[Name]: text</code>) or click <strong>Interject</strong> to have it respond to the latest turn.</p>
         </div>
         <div class="row">
-          <input type="text" id="aiInput" placeholder="Message the therapist…" style="flex:1" />
+          <select id="aiSpeaker" title="Send as which speaker" style="max-width:150px"></select>
+          <input type="text" id="aiInput" placeholder="Type a message for the therapist…" style="flex:1" />
           <button id="aiSend">Send</button>
-          <button class="secondary" id="aiInterject">Interject</button>
+          <button class="secondary" id="aiInterject" title="Have the therapist respond to the latest transcript turn">Interject</button>
         </div>
+        <p class="hint" style="margin:6px 2px 0">Select your name, type a message — it's sent to the Therapist AI, which sees the live transcript and past-session memory.</p>
       </div>
 
       <div class="ai-pane" id="pane-analysis" hidden>

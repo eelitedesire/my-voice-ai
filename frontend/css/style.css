@@ -573,3 +573,12 @@ details.config summary:hover { color: var(--text); }
 .mem-fact .cat { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--brand-b);
   background: var(--brand-bg); border-radius: 6px; padding: 1px 6px; }
 .mem-fact .x { color: var(--danger); cursor: pointer; font-weight: 700; }
+
+/* AI panels — extras (mood pill, homework, memory header) */
+.mood-pill { display: inline-block; background: #fef9c3; color: #854d0e; padding: 3px 12px; border-radius: 999px; font-weight: 600; font-size: 13px; }
+[data-theme="dark"] .mood-pill { background: #3f3a13; color: #fde68a; }
+.an-block p.homework { background: var(--brand-bg); border-radius: 8px; padding: 10px 12px; }
+.mem-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
+.mem-meta { font-size: 12px; color: var(--faint); }
+.mem-clear { color: var(--danger); cursor: pointer; font-weight: 600; }
+.mem-clear:hover { text-decoration: underline; }

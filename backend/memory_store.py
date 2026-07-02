@@ -48,7 +48,7 @@ def add_facts(name: str, facts: list[dict]) -> list[dict]:
     the facts actually stored (with id + timestamp)."""
     with _lock:
         db = _load()
-        spk = db["speakers"].setdefault(name, {"name": name, "facts": []})
+        spk = db["speakers"].setdefault(name, {"name": name, "facts": [], "updatedAt": time.time()})
         have = {f["content"].strip().lower() for f in spk["facts"]}
         added = []
         for f in facts:
@@ -62,6 +62,7 @@ def add_facts(name: str, facts: list[dict]) -> list[dict]:
             have.add(content.lower())
             added.append(fact)
         if added:
+            spk["updatedAt"] = time.time()
             _save(db)
         return added
 

@@ -10,5 +10,5 @@ export HF_HUB_DISABLE_XET=${HF_HUB_DISABLE_XET:-1}
 HOST=${HOST:-127.0.0.1}
 PORT=${PORT:-8000}
 
-echo "==> http://$HOST:$PORT   (Enroll: /enroll.html   Live: /live.html)"
+echo "==> http://$HOST:$PORT   (Enroll: /enroll   Live: /live)"
 exec uvicorn backend.main:app --host "$HOST" --port "$PORT" "$@"

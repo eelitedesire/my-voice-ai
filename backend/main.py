@@ -5,7 +5,7 @@ import asyncio
 import json
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -282,6 +282,31 @@ async def ws_stream(ws: WebSocket):
                 await asr_task
             except Exception:
                 pass
+
+
+# ---------------------------------------------------------------- clean page URLs
+
+# Serve pages at extensionless paths (/enroll instead of /enroll.html) and 301
+# the old .html URLs to the clean ones. Defined BEFORE the static mount so they
+# take precedence; assets (/js, /css, /images) still come from StaticFiles.
+_PAGES = {"enroll": "enroll.html", "live": "live.html", "upload": "live.html"}
+
+
+def _page(name: str):
+    from fastapi.responses import FileResponse
+    return FileResponse(str(FRONTEND_DIR / _PAGES[name]))
+
+
+for _name in _PAGES:
+    app.get(f"/{_name}", include_in_schema=False)(
+        (lambda n: (lambda: _page(n)))(_name))
+    app.get(f"/{_name}.html", include_in_schema=False)(
+        (lambda n: (lambda: RedirectResponse(f"/{n}", status_code=301)))(_name))
+
+
+@app.get("/index.html", include_in_schema=False)
+def _index_html():
+    return RedirectResponse("/", status_code=301)
 
 
 # ---------------------------------------------------------------- static frontend

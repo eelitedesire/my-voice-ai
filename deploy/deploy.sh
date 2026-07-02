@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Update the deployed app after `git push`.
 #
-# Run as a user WITH sudo (e.g. localadmin) — NOT as the `sanuvia` service user:
-#   /opt/sanuvia/my-voice-ai/deploy/deploy.sh
+# Run as a sudo-capable admin (e.g. localadmin) — NOT as the `sanuvia` service user:
+#   sudo bash /opt/sanuvia/my-voice-ai/deploy/deploy.sh
 #
 # It pulls the code + installs deps AS the `sanuvia` user (which owns the files),
-# then restarts the service via sudo. You'll be asked for YOUR sudo password once.
+# then restarts the service. Using `sudo bash` avoids any execute-bit / file
+# permission issues and only asks for your sudo password once.
 set -euo pipefail
 APP=/opt/sanuvia/my-voice-ai
 SVC=sanuvia

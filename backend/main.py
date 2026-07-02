@@ -7,10 +7,12 @@ import json
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from .config import settings, TUNABLE_FIELDS, BASE_DIR
 from . import audio as audio_utils
 from . import embeddings, vad, sherpa_asr
+from . import ai, memory_store, llm
 from .enrollment import store
 from .session import LiveSession
 from .batch import iter_process_file
@@ -108,6 +110,75 @@ async def update_config(update: ConfigUpdate):
             setattr(settings, k, v)
             changed[k] = v
     return {"updated": changed, "config": settings.public()}
+
+
+# ---------------------------------------------------------------- REST: AI layer
+
+class AssistantRequest(BaseModel):
+    message: str
+    transcript: list[dict] = []
+    chat_history: list[dict] = []
+    system_prompt: str | None = None
+
+
+class AnalyzeRequest(BaseModel):
+    transcript: list[dict]
+    system_prompt: str | None = None
+    template_id: str | None = None
+
+
+def _require_ai():
+    if not llm.available():
+        raise HTTPException(503, "AI features disabled: set GROQ_API_KEY on the server.")
+
+
+@app.get("/api/prompt-templates")
+async def prompt_templates():
+    return {"templates": ai.SUPERVISOR_TEMPLATES, "default": ai.DEFAULT_SUPERVISOR,
+            "ai_enabled": llm.available()}
+
+
+@app.post("/api/assistant")
+async def assistant(req: AssistantRequest):
+    _require_ai()
+    if not req.message.strip():
+        raise HTTPException(400, "message is required")
+    try:
+        return await asyncio.get_event_loop().run_in_executor(
+            None, lambda: ai.assistant(req.message, req.transcript, req.chat_history, req.system_prompt))
+    except llm.LLMUnavailable as e:
+        raise HTTPException(503, str(e))
+    except Exception as e:  # pragma: no cover
+        raise HTTPException(502, f"LLM error: {e}")
+
+
+@app.post("/api/analyze")
+async def analyze(req: AnalyzeRequest):
+    _require_ai()
+    if not req.transcript:
+        raise HTTPException(400, "transcript is required")
+    try:
+        return await asyncio.get_event_loop().run_in_executor(
+            None, lambda: ai.analyze(req.transcript, req.system_prompt, req.template_id))
+    except llm.LLMUnavailable as e:
+        raise HTTPException(503, str(e))
+    except Exception as e:  # pragma: no cover
+        raise HTTPException(502, f"LLM error: {e}")
+
+
+@app.get("/api/memory")
+async def get_memory():
+    return memory_store.get_all()
+
+
+@app.delete("/api/memory/{speaker}")
+async def delete_speaker_memory(speaker: str):
+    return {"cleared": memory_store.clear_speaker(speaker)}
+
+
+@app.delete("/api/memory/{speaker}/{fact_id}")
+async def delete_memory_fact(speaker: str, fact_id: str):
+    return {"deleted": memory_store.delete_fact(speaker, fact_id)}
 
 
 # ---------------------------------------------------------------- REST: file upload

@@ -13,9 +13,10 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 SPEAKERS_DIR = DATA_DIR / "speakers"
+MEMORY_DIR = DATA_DIR / "memory"      # per-speaker LLM-extracted facts
 MODELS_DIR = BASE_DIR / "models"
 
-for _d in (DATA_DIR, SPEAKERS_DIR, MODELS_DIR):
+for _d in (DATA_DIR, SPEAKERS_DIR, MEMORY_DIR, MODELS_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 
@@ -86,6 +87,14 @@ class Settings:
     # Finalize (and transcribe) a turn after this much trailing silence.
     finalize_silence_ms: int = _env_int("FINALIZE_SILENCE_MS", 700)
 
+    # ---- AI layer (Groq LLM: assistant + supervisor + memory) ----
+    # Hosted LLM — the server is CPU-only so this must be an API. Features are
+    # disabled until a key is set. NOTE: enabling these sends transcript text to
+    # Groq; gate behind user consent for sensitive/clinical use.
+    groq_api_key: str = _env_str("GROQ_API_KEY", "")
+    groq_model: str = _env_str("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+    enable_assistant: bool = _env_str("ENABLE_ASSISTANT", "auto") != "0"
+
     # ---- ASR engine: Sherpa-ONNX streaming Zipformer (live + file upload) ----
     # Model dir with encoder/decoder/joiner .onnx + tokens.txt.
     sherpa_model_dir: str = _env_str(
@@ -102,9 +111,15 @@ class Settings:
     # PCM frame. 512 = 32 ms. Sent to the frontend via /api/config.
     client_chunk_samples: int = _env_int("CLIENT_CHUNK_SAMPLES", 512)
 
+    def ai_enabled(self) -> bool:
+        """True when the Groq-backed AI features can run."""
+        return self.enable_assistant and bool(self.groq_api_key.strip())
+
     def public(self) -> dict:
-        """Config safe to expose to the UI / tuning endpoint."""
+        """Config safe to expose to the UI / tuning endpoint (no secrets)."""
         d = asdict(self)
+        d.pop("groq_api_key", None)          # never expose the key
+        d["ai_enabled"] = self.ai_enabled()
         return d
 
 

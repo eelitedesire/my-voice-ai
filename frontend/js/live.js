@@ -6,6 +6,8 @@ let ws = null, rec = null, running = false, busy = false;
 let clientChunk = 512;   // audio worklet frame size; overridden from /api/config
 let startTime = 0, timerInt = null, exportName = 'sanuvia-transcript';
 const view = new TranscriptView($('transcript'), { autoscroll: true });
+// expose the current transcript to the AI panels (js/ai.js)
+window.__transcript = () => view.segments();
 
 function toast(msg, kind = '') {
   const t = $('toast'); t.textContent = msg; t.className = `toast show ${kind}`;

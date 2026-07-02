@@ -19,6 +19,10 @@ Environment=OMP_NUM_THREADS=2
 Environment=SHERPA_NUM_THREADS=2
 Environment=MALLOC_ARENA_MAX=2
 
+# AI layer (assistant / supervisor / memory). Disabled until a Groq key is set.
+# NOTE: enabling sends transcript text to Groq — gate behind consent for clinical use.
+# Environment=GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxx
+
 ExecStart=/opt/sanuvia/my-voice-ai/.venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000
 
 Restart=on-failure

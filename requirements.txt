@@ -18,4 +18,6 @@ sherpa-onnx==1.10.46
 numpy<2.0
 soundfile==0.12.1
 scipy>=1.11,<1.14
+# AI layer (assistant / supervisor / memory) — hosted Groq LLM
+groq>=0.11,<1.0
 requests>=2.31       # required by speechbrain but not declared by it

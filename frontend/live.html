@@ -116,6 +116,44 @@
       </div>
     </div>
 
+    <div class="card" id="aiCard">
+      <div class="toolbar">
+        <h2>AI Session</h2>
+        <span class="grow"></span>
+        <span class="badge" id="aiStatus">checking…</span>
+      </div>
+      <div class="ai-tabs">
+        <button class="ai-tab active" data-tab="assistant">Assistant</button>
+        <button class="ai-tab" data-tab="analysis">Analysis</button>
+        <button class="ai-tab" data-tab="memory">Memory</button>
+      </div>
+
+      <div class="ai-pane" id="pane-assistant">
+        <div class="ai-chat" id="aiChat">
+          <p class="hint">The AI therapist can see the live transcript. Send a message (optionally as <code>[Name]: text</code>) or click <strong>Interject</strong> to have it respond to the latest turn.</p>
+        </div>
+        <div class="row">
+          <input type="text" id="aiInput" placeholder="Message the therapist…" style="flex:1" />
+          <button id="aiSend">Send</button>
+          <button class="secondary" id="aiInterject">Interject</button>
+        </div>
+      </div>
+
+      <div class="ai-pane" id="pane-analysis" hidden>
+        <div class="row">
+          <select id="aiPersona" style="max-width:260px"></select>
+          <button id="aiAnalyze">Analyze session</button>
+        </div>
+        <div id="aiAnalysis"></div>
+      </div>
+
+      <div class="ai-pane" id="pane-memory" hidden>
+        <div class="row"><button class="secondary sm" id="aiMemRefresh">Refresh</button>
+          <small>Facts the AI has learned about each speaker (persist across sessions).</small></div>
+        <div id="aiMemory"></div>
+      </div>
+    </div>
+
     <div class="card">
       <details class="config">
         <summary>
@@ -132,5 +170,6 @@
   </div>
   <div class="toast" id="toast"></div>
   <script type="module" src="/js/live.js"></script>
+  <script type="module" src="/js/ai.js"></script>
 </body>
 </html>

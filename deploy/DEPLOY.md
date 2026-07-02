@@ -143,7 +143,7 @@ and keep the cert paths already in the conf.
 Push changes to GitHub, then on the server:
 
 ```bash
-sudo -u sanuvia /opt/sanuvia/my-voice-ai/deploy/deploy.sh
+/opt/sanuvia/my-voice-ai/deploy/deploy.sh   # run as localadmin (has sudo)
 ```
 
 (That script does `git pull`, `pip install -r requirements.txt`, ensures the

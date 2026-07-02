@@ -1,0 +1,26 @@
+# Sanuvia AI — uvicorn service.  Install to /etc/systemd/system/sanuvia.service
+# Assumes the repo is cloned at /opt/sanuvia/my-voice-ai and owned by user `sanuvia`.
+[Unit]
+Description=Sanuvia AI (FastAPI + uvicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=sanuvia
+Group=sanuvia
+WorkingDirectory=/opt/sanuvia/my-voice-ai
+
+# keep model caches inside the app dir (writable by the service user)
+Environment=HF_HOME=/opt/sanuvia/my-voice-ai/.cache/huggingface
+Environment=HF_HUB_DISABLE_XET=1
+Environment=OMP_NUM_THREADS=2
+
+ExecStart=/opt/sanuvia/my-voice-ai/.venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000
+
+Restart=on-failure
+RestartSec=5
+# model loading on first boot can take a while
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

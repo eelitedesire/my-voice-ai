@@ -24,3 +24,6 @@ __pycache__/
 # IDE
 .vscode/
 .idea/
+
+# reference project (not part of Sanuvia)
+voice-ai-master/

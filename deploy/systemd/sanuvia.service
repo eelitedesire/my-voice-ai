@@ -19,9 +19,11 @@ Environment=OMP_NUM_THREADS=2
 Environment=SHERPA_NUM_THREADS=2
 Environment=MALLOC_ARENA_MAX=2
 
-# AI layer (assistant / supervisor / memory). Disabled until a Groq key is set.
+# AI layer (assistant / supervisor / memory). Set the Groq key in /etc/sanuvia.env:
+#   echo 'GROQ_API_KEY=gsk_...' | sudo tee /etc/sanuvia.env && sudo chmod 600 /etc/sanuvia.env
+# The leading '-' makes the file optional (no error if it doesn't exist yet).
 # NOTE: enabling sends transcript text to Groq — gate behind consent for clinical use.
-# Environment=GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxx
+EnvironmentFile=-/etc/sanuvia.env
 
 ExecStart=/opt/sanuvia/my-voice-ai/.venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000
 
